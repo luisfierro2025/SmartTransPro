@@ -1,0 +1,246 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>SmartTransPro</title>
+  <link rel="stylesheet" href="./css/style.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <button id="sidebarToggle" class="sidebar-toggle" type="button" title="Plegar/expandir menú" aria-label="Plegar/expandir menú">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+      </button>
+      <div class="brand">
+        <div class="brand-mark">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 16V7a1 1 0 0 1 1-1h9v10"/><path d="M13 10h4l3 3v3h-2"/><circle cx="7.5" cy="17.5" r="1.7"/><circle cx="16.5" cy="17.5" r="1.7"/></svg>
+        </div>
+        <div>
+          <strong>SmartTransPro</strong>
+          <span>Gestión de Transporte</span>
+        </div>
+      </div>
+      <nav class="menu">
+        <button class="menu-item active" data-module="dashboard">
+          <svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>
+          <span>Dashboard</span>
+        </button>
+        <button class="menu-item" data-module="bitacora">
+          <svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3h8a1 1 0 0 1 1 1v16a1 1 0 0 1-1 1H8a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1Z"/><path d="M9 3v3h6V3"/><path d="M9 11h6M9 15h6M9 19h3"/></svg>
+          <span>Bitácora</span>
+        </button>
+        <button class="menu-item" data-module="flota">
+          <svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 16V7a1 1 0 0 1 1-1h9v10"/><path d="M13 10h4l3 3v3h-2"/><circle cx="7.5" cy="17.5" r="1.7"/><circle cx="16.5" cy="17.5" r="1.7"/></svg>
+          <span>Flota</span>
+        </button>
+        <button class="menu-item" data-module="clientes">
+          <svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.2"/><path d="M2.5 20c.7-3.4 3.3-5.5 6.5-5.5s5.8 2.1 6.5 5.5"/><circle cx="17.5" cy="8.5" r="2.6"/><path d="M16 14.8c2.6.3 4.6 2.2 5.2 5.2"/></svg>
+          <span>Clientes</span>
+        </button>
+        <button class="menu-item" data-module="planilla">
+          <svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="5" width="19" height="14" rx="2"/><path d="M2.5 10h19"/><path d="M6 14.5h5"/><path d="M6 17h3"/></svg>
+          <span>Planilla</span>
+        </button>
+        <button class="menu-item" data-module="ingresos">
+          <svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15l6-6 4 4 6-7"/><path d="M15 6h5v5"/></svg>
+          <span>Ingresos</span>
+        </button>
+        <button class="menu-item" data-module="egresos">
+          <svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9l6 6 4-4 6 7"/><path d="M15 18h5v-5"/></svg>
+          <span>Egresos / Gastos</span>
+        </button>
+        <button class="menu-item" data-module="reportes">
+          <svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V10M11 20V4M18 20v-7"/><path d="M2 20h20"/></svg>
+          <span>Reportes</span>
+        </button>
+        <button class="menu-item" data-module="usuarios">
+          <svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="3.4"/><path d="M4.5 20c.9-3.6 3.9-5.6 7.5-5.6s6.6 2 7.5 5.6"/><path d="M18.5 5.6a3 3 0 0 1 0 5.4"/></svg>
+          <span>Usuarios</span>
+        </button>
+        <button class="menu-item" data-module="configuracion">
+          <svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 13.5a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1.04 1.56V19.6a2 2 0 1 1-4 0v-.09a1.7 1.7 0 0 0-1.04-1.56 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.7 1.7 0 0 0 .34-1.87 1.7 1.7 0 0 0-1.56-1.04H2.4a2 2 0 1 1 0-4h.09A1.7 1.7 0 0 0 4.05 8.5a1.7 1.7 0 0 0-.34-1.87l-.06-.06A2 2 0 1 1 6.48 3.74l.06.06a1.7 1.7 0 0 0 1.87.34H8.5a1.7 1.7 0 0 0 1.04-1.56V2.4a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1.04 1.56 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87v.09c.24.68.82 1.2 1.56 1.36h.09a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.56 1.04Z"/></svg>
+          <span>Configuración</span>
+        </button>
+      </nav>
+      <div class="sidebar-sesion" id="sidebarSesion">
+        <div class="sidebar-avatar" id="sidebarAvatar">-</div>
+        <div class="sidebar-sesion-datos">
+          <strong id="sidebarUsuarioNombre">Sin sesión</strong>
+          <span id="sidebarUsuarioRol"></span>
+        </div>
+        <button id="btnMiClave" class="sidebar-sesion-boton" type="button" title="Cambiar mi contraseña" aria-label="Cambiar mi contraseña">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="10.5" width="16" height="10" rx="2"/><path d="M8 10.5V7.8a4 4 0 0 1 8 0v2.7"/></svg>
+          <span>Clave</span>
+        </button>
+        <button id="btnCerrarSesion" class="sidebar-sesion-boton salir" type="button" title="Cerrar sesión" aria-label="Cerrar sesión">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15 17.5v1.8a1.7 1.7 0 0 1-1.7 1.7H5.7A1.7 1.7 0 0 1 4 19.3V4.7A1.7 1.7 0 0 1 5.7 3h7.6a1.7 1.7 0 0 1 1.7 1.7v1.8"/><path d="M19.5 12H9.5"/><path d="M16.5 8.8 19.7 12l-3.2 3.2"/></svg>
+          <span>Cerrar sesión</span>
+        </button>
+      </div>
+      <div class="sidebar-footer">Sistema local</div>
+    </aside>
+    <main class="main">
+      <header class="topbar">
+        <div class="topbar-marca">
+          <!-- Logotipo de la empresa. Mientras no se cargue un logo propio, se
+               dibujan las iniciales del nombre (ver pintarLogoEmpresa), así que
+               el recuadro nunca queda vacío. Al entrar el logo real basta con
+               guardar la ruta o la imagen en "logo_empresa". -->
+          <div class="empresa-logo" id="empresaLogo" role="img" aria-label="Logotipo de la empresa"></div>
+          <span class="empresa-nombre" id="empresaDestacada">Transporte Fierro</span>
+        </div>
+        <div class="topbar-title">
+          <div class="breadcrumb">Panel administrativo</div>
+          <h1 id="page-title">Dashboard</h1>
+        </div>
+        <div class="topbar-actions">
+          <button id="themeToggle" class="icon-btn" type="button" title="Cambiar tema" aria-label="Cambiar tema">◐</button>
+          <div class="system-status"><span class="status-dot"></span><span id="top-status-text">Sistema operativo</span></div>
+        </div>
+      </header>
+      <section id="content" class="content"></section>
+      <footer class="statusbar">
+        <div class="statusbar-left">
+          <span class="statusbar-item"><span class="status-dot"></span><span id="db-status">Base de datos: verificando…</span></span>
+          <span class="statusbar-separator"></span>
+          <span class="statusbar-item">Módulo: <strong id="status-module">Dashboard</strong></span>
+        </div>
+        <div class="statusbar-right">
+          <span class="statusbar-item" id="status-clock">--:--:--</span>
+          <span class="statusbar-item">SmartTransPro v0.1.0</span>
+        </div>
+      </footer>
+    </main>
+  </div>
+
+  <!-- Instalación: se muestra SOLO la primera vez, cuando todavía no hay
+       ninguna cuenta. El usuario elige su usuario y su contraseña, así que el
+       sistema no arranca con credenciales de fábrica. Comparte el diseño de la
+       pantalla de acceso. -->
+  <div id="instalacionPantalla" class="acceso acceso-instalacion" hidden>
+    <div class="acceso-mitad acceso-presentacion">
+      <div class="acceso-marca">
+        <div class="brand-mark">
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 16V7a1 1 0 0 1 1-1h9v10"/><path d="M13 10h4l3 3v3h-2"/><circle cx="7.5" cy="17.5" r="1.7"/><circle cx="16.5" cy="17.5" r="1.7"/></svg>
+        </div>
+        <div>
+          <strong>SmartTransPro</strong>
+          <span>Gestión de Transporte</span>
+        </div>
+      </div>
+      <h2 class="acceso-lema">Empiece por crear su cuenta de administrador.</h2>
+      <ul class="acceso-lista">
+        <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12.5 9.5 18 20 6.5"/></svg> Usted elige su usuario y su contraseña</li>
+        <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12.5 9.5 18 20 6.5"/></svg> La contraseña se guarda cifrada, nunca en texto claro</li>
+        <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12.5 9.5 18 20 6.5"/></svg> Después podrá agregar más usuarios con su rol</li>
+      </ul>
+      <p class="acceso-pie">Esta pantalla solo aparecerá una vez.</p>
+    </div>
+
+    <div class="acceso-mitad acceso-formulario">
+      <form class="acceso-caja" id="instalacionForm" autocomplete="off" novalidate>
+        <h1 class="acceso-titulo">Configuración inicial</h1>
+        <p class="acceso-subtitulo">Complete estos datos para empezar a usar el sistema.</p>
+
+        <div class="campo">
+          <label for="instEmpresa">Nombre de la empresa</label>
+          <input id="instEmpresa" name="empresa" type="text" placeholder="Ej. Transporte Fierro" spellcheck="false">
+        </div>
+
+        <div class="campo">
+          <label for="instNombre">Su nombre completo</label>
+          <input id="instNombre" name="nombre" type="text" placeholder="Juan Pérez" spellcheck="false">
+        </div>
+
+        <div class="campo">
+          <label for="instUsuario">Usuario de acceso</label>
+          <div class="campo-icono">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="3.4"/><path d="M4.5 20c.9-3.6 3.9-5.6 7.5-5.6s6.6 2 7.5 5.6"/></svg>
+            <input id="instUsuario" name="usuario" type="text" autocomplete="username" placeholder="jperez" spellcheck="false">
+          </div>
+        </div>
+
+        <div class="campo">
+          <label for="instClave">Contraseña</label>
+          <input id="instClave" name="clave" type="password" autocomplete="new-password" placeholder="Mínimo 6 caracteres">
+        </div>
+
+        <div class="campo">
+          <label for="instClaveRepetir">Repita la contraseña</label>
+          <input id="instClaveRepetir" name="clave_repetir" type="password" autocomplete="new-password" placeholder="••••••••">
+        </div>
+
+        <div id="instError" class="acceso-error" hidden role="alert"></div>
+
+        <button id="instBoton" class="btn primary acceso-boton" type="button">
+          <span class="acceso-boton-texto">Crear cuenta y entrar</span>
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Acceso. Tapa la aplicación hasta que haya una sesión válida: sin ella no
+       se llama a ningún canal de datos, así que ni la base ni los archivos
+       quedan expuestos antes de autenticarse. -->
+  <div id="loginPantalla" class="acceso" hidden>
+    <div class="acceso-mitad acceso-presentacion">
+      <div class="acceso-marca">
+        <div class="brand-mark">
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 16V7a1 1 0 0 1 1-1h9v10"/><path d="M13 10h4l3 3v3h-2"/><circle cx="7.5" cy="17.5" r="1.7"/><circle cx="16.5" cy="17.5" r="1.7"/></svg>
+        </div>
+        <div>
+          <strong>SmartTransPro</strong>
+          <span>Gestión de Transporte</span>
+        </div>
+      </div>
+      <h2 class="acceso-lema">Control de flota, finanzas y rutas en un solo lugar.</h2>
+      <ul class="acceso-lista">
+        <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12.5 9.5 18 20 6.5"/></svg> Bitácora de viajes, kilometraje y rutas</li>
+        <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12.5 9.5 18 20 6.5"/></svg> Ingresos, egresos, planilla y comisiones</li>
+        <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12.5 9.5 18 20 6.5"/></svg> Reportes listos para imprimir</li>
+      </ul>
+      <p class="acceso-pie">Acceso restringido a personal autorizado.</p>
+    </div>
+
+    <div class="acceso-mitad acceso-formulario">
+      <form class="acceso-caja" id="loginForm" autocomplete="off" novalidate>
+        <h1 class="acceso-titulo">Iniciar sesión</h1>
+        <p class="acceso-subtitulo">Ingrese con su usuario para acceder al sistema.</p>
+
+        <div class="campo">
+          <label for="loginUsuario">Usuario</label>
+          <div class="campo-icono">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="3.4"/><path d="M4.5 20c.9-3.6 3.9-5.6 7.5-5.6s6.6 2 7.5 5.6"/></svg>
+            <input id="loginUsuario" name="usuario" type="text" autocomplete="username" placeholder="jperez" spellcheck="false">
+          </div>
+        </div>
+
+        <div class="campo">
+          <label for="loginClave">Contraseña</label>
+          <input id="loginClave" name="clave" type="password" autocomplete="current-password" placeholder="••••••••">
+        </div>
+
+        <div id="loginError" class="acceso-error" hidden role="alert"></div>
+
+        <button id="loginBoton" class="btn primary acceso-boton" type="button">
+          <span class="acceso-boton-texto">Entrar</span>
+        </button>
+
+        <p class="acceso-nota">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="10.5" width="16" height="10" rx="2"/><path d="M8 10.5V7.8a4 4 0 0 1 8 0v2.7"/></svg>
+          ¿Olvidó su contraseña? Pida a un administrador que la restablezca.
+        </p>
+      </form>
+    </div>
+  </div>
+
+  <script src="./js/utilidades.js"></script>
+  <script src="./js/cliente-api.js"></script>
+  <script src="./js/modules_flota_clientes.js"></script>
+  <script src="./js/modules_administracion.js"></script>
+  <script src="./js/sesion.js"></script>
+  <script src="./js/modulo_usuarios.js"></script>
+  <script src="./js/app.js"></script>
+</body>
+</html>

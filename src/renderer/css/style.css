@@ -1,0 +1,302 @@
+*{box-sizing:border-box}
+:root{
+  --bg:#f4f6f8;--surface:#fff;--surface-2:#f8f9fa;--border:#e2e6ea;
+  --text:#17202a;--muted:#667085;--primary:#344054;--primary-hover:#1f2937;
+  --success:#157347;--danger:#b42318;--sidebar:#20252b;--sidebar-hover:#2c3239;
+  --input-bg:#fff;--input-border:#d0d5dd;--focus:#667085;
+}
+html,body{margin:0;width:100%;height:100%;overflow:hidden;font-family:"Segoe UI",Arial,sans-serif;color:var(--text);background:var(--bg)}
+body{min-width:900px}
+button,input,select,textarea{font:inherit}button{cursor:pointer}
+.app-shell{display:grid;grid-template-columns:250px minmax(0,1fr);width:100%;height:100vh;min-height:0;overflow:hidden}
+.sidebar{width:250px;height:100vh;min-height:0;background:var(--sidebar);color:#fff;display:flex;flex-direction:column;padding:18px 12px;overflow:hidden;position:relative;transition:width .18s ease}
+.sidebar-toggle{position:absolute;top:22px;right:-13px;width:26px;height:26px;border-radius:50%;border:1px solid var(--border);background:var(--surface);color:var(--muted);display:grid;place-items:center;z-index:30;box-shadow:0 1px 3px rgba(16,24,40,.15)}.sidebar-toggle:hover{color:var(--text);background:var(--surface-2)}.sidebar-toggle svg{transition:transform .18s ease}
+.brand{display:flex;align-items:center;gap:11px;padding:8px 10px 22px;flex:0 0 auto}.brand-mark{width:38px;height:38px;border-radius:9px;display:grid;place-items:center;background:#475467;font-weight:700;color:#fff;flex:0 0 auto}.brand strong{display:block;font-size:15px;letter-spacing:.2px}.brand span{display:block;margin-top:3px;color:#aab1ba;font-size:12px}
+.menu{display:flex;flex-direction:column;gap:4px;min-height:0;overflow:hidden}.menu-item{width:100%;border:0;background:transparent;color:#cbd0d6;text-align:left;padding:11px 13px;border-radius:7px;font-size:14px;flex:0 0 auto;display:flex;align-items:center;gap:11px}.menu-item:hover{background:var(--sidebar-hover);color:#fff}.menu-item.active{background:#fff;color:#344054}.menu-icon{width:18px;height:18px;flex:0 0 auto;opacity:.8}.menu-item:hover .menu-icon,.menu-item.active .menu-icon{opacity:1}
+.sidebar-footer{margin-top:auto;flex:0 0 auto;color:#89919b;font-size:12px;padding:12px 10px 4px;border-top:1px solid rgba(255,255,255,.06)}
+.main{min-width:0;min-height:0;height:100vh;display:grid;grid-template-rows:88px minmax(0,1fr) 30px;overflow:hidden}
+.topbar{height:88px;min-height:88px;background:var(--surface);border-bottom:1px solid var(--border);padding:17px 28px;display:flex;justify-content:space-between;align-items:center;overflow:hidden;z-index:20}/* Bloque de marca de la empresa: logotipo a la izquierda y nombre al lado, como
+   el membrete de cualquier aplicación seria. Va antes del título del módulo
+   porque la empresa es el contexto y el módulo es lo que se está mirando. */
+.topbar-marca{flex:0 1 auto;min-width:0;display:flex;align-items:center;gap:11px;padding-right:22px;border-right:1px solid var(--border)}
+.empresa-logo{flex:0 0 auto;width:38px;height:38px;border-radius:9px;background:var(--primary);color:#fff;display:grid;place-items:center;font-size:13.5px;font-weight:700;letter-spacing:.3px;overflow:hidden;box-shadow:0 1px 2px rgba(16,24,40,.12)}
+/* Cuando haya logo real se muestra la imagen completa, sin deformarla. */
+.empresa-logo img{width:100%;height:100%;object-fit:contain;background:#fff}
+.empresa-nombre{font-size:14.5px;font-weight:650;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:230px}
+.topbar-title{flex:1 1 auto;min-width:0;margin-left:22px}
+.topbar-actions{flex:0 0 auto;display:flex;align-items:center;gap:14px}.breadcrumb{color:var(--muted);font-size:12px;margin-bottom:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}h1{font-size:23px;margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}/* El nombre de la empresa es un dato de contexto, no el titular de la pantalla:
+   por eso va en versalitas y en color apagado, para no competir con el nombre
+   del módulo (h1), que es lo que el usuario está mirando. Antes se mostraba al
+   mismo tamaño y más grueso que el título, y eso descentraba la vista. */
+.empresa-destacada{flex:1 1 auto;min-width:0;text-align:center;font-size:11.5px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.7px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding:0 22px}.topbar-actions{display:flex;align-items:center;gap:14px;flex:0 0 auto}.system-status{font-size:12px;color:var(--muted);white-space:nowrap}.status-dot{width:7px;height:7px;display:inline-block;background:#12b76a;border-radius:50%;margin-right:5px}.icon-btn{width:34px;height:34px;border:1px solid var(--border);border-radius:7px;background:var(--surface);color:var(--muted);font-size:16px;display:grid;place-items:center}.icon-btn:hover{background:var(--surface-2);color:var(--text)}
+.content{min-height:0;overflow:auto;overscroll-behavior:contain;padding:28px;scrollbar-gutter:stable}.content::-webkit-scrollbar{width:10px;height:10px}.content::-webkit-scrollbar-thumb{background:#c7cdd4;border-radius:10px;border:3px solid transparent;background-clip:padding-box}.content::-webkit-scrollbar-track{background:transparent}
+.statusbar{height:30px;min-height:30px;background:var(--surface);border-top:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 16px;font-size:11px;color:var(--muted);overflow:hidden;white-space:nowrap;z-index:20}.statusbar-left,.statusbar-right{display:flex;align-items:center;gap:12px;min-width:0}.statusbar-item{display:inline-flex;align-items:center;min-width:0}.statusbar-separator{width:1px;height:13px;background:var(--border)}
+.page-intro{margin-bottom:22px}.page-intro h2{margin:0 0 5px;font-size:19px}.page-intro p{margin:0;color:var(--muted);font-size:13px}.cards{display:grid;grid-template-columns:repeat(5,minmax(150px,1fr));gap:14px}.card,.panel,.module-card{background:var(--surface);border:1px solid var(--border);border-radius:9px;padding:18px}.card-label{color:var(--muted);font-size:12px}.card-value{font-size:23px;font-weight:650;margin-top:8px}.positive{color:var(--success)}.negative{color:var(--danger)}.panel{margin-top:18px}.panel h3,.module-card h3{margin:0 0 8px;font-size:16px}.panel p,.module-card p{color:var(--muted);font-size:13px;line-height:1.5}.module-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:15px}.toolbar{display:flex;gap:9px;flex-wrap:wrap;align-items:end;margin-bottom:15px}.field{display:flex;flex-direction:column;gap:5px}.field label{color:var(--muted);font-size:12px}.field input,.field select,.field textarea{min-width:150px;border:1px solid var(--input-border);border-radius:6px;padding:8px 9px;background:var(--input-bg);color:var(--text);outline:none}.field input:focus,.field select:focus,.field textarea:focus,.form-group input:focus,.form-group select:focus,.form-group textarea:focus{border-color:var(--focus);box-shadow:0 0 0 2px rgba(71,84,103,.10)}
+input:not(:disabled),select:not(:disabled),textarea:not(:disabled){opacity:1}.field input:disabled,.field select:disabled,.field textarea:disabled,.form-group input:disabled,.form-group select:disabled,.form-group textarea:disabled{background:var(--surface-2);color:#98a2b3;cursor:not-allowed;opacity:.72}
+.btn{border:1px solid #d0d5dd;border-radius:6px;padding:8px 13px;background:var(--surface);color:var(--text);white-space:nowrap;display:inline-flex;align-items:center;justify-content:center;gap:6px}.btn:hover{background:var(--surface-2)}.btn.primary{background:var(--primary);border-color:var(--primary);color:#fff}.btn.primary:hover{background:var(--primary-hover)}.table-wrap{overflow:auto;max-width:100%}table{width:100%;border-collapse:collapse;font-size:13px}th,td{text-align:left;padding:10px 9px;border-bottom:1px solid var(--border)}th{background:var(--surface-2);color:var(--muted);font-weight:600}.empty{color:var(--muted);padding:25px;text-align:center}.form-grid{display:grid;grid-template-columns:repeat(2,minmax(250px,1fr));gap:14px}.form-actions{margin-top:18px}
+.nav-tabs{display:flex;gap:8px;border-bottom:1px solid var(--border);margin-bottom:18px;flex-wrap:wrap}.tab-btn{background:transparent;border:none;border-bottom:2px solid transparent;padding:8px 16px;font-size:14px;font-weight:600;color:var(--muted);cursor:pointer;border-radius:4px 4px 0 0;white-space:nowrap}.tab-btn:hover{color:var(--text);background:#f2f4f7}.tab-btn.active{color:var(--primary);border-bottom-color:var(--primary);background:var(--surface)}.tab-content{display:none}.tab-content.active{display:block}
+.badge{display:inline-block;padding:3px 8px;border-radius:12px;font-size:11px;font-weight:600;text-transform:uppercase}.badge-success{background:#ecfdf3;color:#027a48;border:1px solid #a6f4c5}.badge-warning{background:#fffaeb;color:#b54708;border:1px solid #fedf89}.badge-info{background:#eff8ff;color:#175cd3;border:1px solid #b2ddff}.badge-danger{background:#fef3f2;color:#b42318;border:1px solid #fecdca}.badge-neutral{background:#f2f4f7;color:#344054;border:1px solid #d0d5dd}.btn-sm{padding:4px 9px;font-size:12px;border-radius:4px}.btn-danger{background:var(--surface);border-color:#fda29b;color:#b42318}.btn-danger:hover{background:#fef3f2}.btn-secondary{background:#f2f4f7;border-color:#d0d5dd;color:#344054}.modal-overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(16,24,40,0.5);display:flex;align-items:center;justify-content:center;z-index:9999;padding:20px}.modal-box{background:var(--surface);color:var(--text);border-radius:10px;width:90%;max-width:650px;max-height:calc(100vh - 80px);overflow-y:auto;padding:24px;box-shadow:0 20px 25px -5px rgba(0,0,0,0.1),0 10px 10px -5px rgba(0,0,0,0.04)}.modal-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;border-bottom:1px solid var(--border);padding-bottom:12px}.modal-header h3{margin:0;font-size:18px}.modal-close{background:none;border:none;font-size:20px;cursor:pointer;color:var(--muted);padding:0 5px}.form-row{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px}.form-row.full{grid-template-columns:1fr}.form-group{display:flex;flex-direction:column;gap:5px}.form-group label{font-size:12px;font-weight:600;color:var(--primary)}.form-group input,.form-group select,.form-group textarea{border:1px solid var(--input-border);border-radius:6px;padding:8px 10px;font-size:13px;background:var(--input-bg);color:var(--text);outline:none}.btn-warning{background:#f79009;border-color:#f79009;color:#fff;font-weight:600}.btn-warning:hover{background:#dc6803;border-color:#dc6803}.metrics-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px}.form-group textarea{resize:vertical;min-height:60px}.modal-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:20px;padding-top:14px;border-top:1px solid var(--border)}.action-buttons{display:flex;gap:6px}
+.doc-box{border:1px dashed var(--input-border);border-radius:6px;min-height:90px;display:flex;align-items:center;justify-content:center;overflow:hidden;background:var(--surface-2);margin-bottom:5px}.doc-thumb{max-width:100%;max-height:90px;object-fit:contain;cursor:pointer}.doc-empty{color:var(--muted);font-size:11px;padding:8px;text-align:center}
+.doc-box-acciones{display:flex;gap:6px;justify-content:center;flex-wrap:wrap}
+
+/* ---------------------------------------------------------------------------
+   Subida de documentos del conductor (licencia frontal/trasera, carnet).
+   El botón nativo del navegador ("Seleccionar archivo") no tiene nada que ver
+   con el diseño de la aplicación: el input real se oculta (.doc-input) y se
+   dispara desde controles propios, el recuadro punteado y los botones .doc-btn.
+   --------------------------------------------------------------------------- */
+.doc-zona{cursor:pointer;font-size:13px;font-weight:400;color:var(--muted);transition:border-color .15s ease,background .15s ease,box-shadow .15s ease}
+.doc-zona:hover,.doc-zona.arrastre{border-color:var(--focus);background:#eef1f5}
+.doc-zona.arrastre{border-style:solid}
+.doc-zona:focus,.doc-zona:focus-within{border-color:var(--focus);box-shadow:0 0 0 2px rgba(71,84,103,.10);outline:none}
+.doc-box.doc-lleno{background:var(--surface);padding:3px}
+.doc-vacio{display:flex;flex-direction:column;align-items:center;gap:2px;padding:8px 6px;text-align:center;color:var(--muted)}
+.doc-vacio svg{width:20px;height:20px;opacity:.55}
+.doc-vacio strong{color:var(--primary);font-size:12px;font-weight:600}
+.doc-pista{font-size:10px;font-weight:400;color:#98a2b3}
+.doc-acciones{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.doc-btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;border:1px solid var(--input-border);border-radius:6px;padding:6px 11px;background:var(--surface-2);color:var(--text);font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;user-select:none;transition:background .15s ease,border-color .15s ease}
+.form-group label.doc-btn{font-size:12px;font-weight:600;color:var(--text)}
+.doc-btn:hover{background:#e4e7ec;border-color:#98a2b3}
+.doc-btn:active{transform:translateY(1px)}
+.doc-btn svg{width:14px;height:14px;opacity:.7;flex:0 0 auto}
+.form-group .doc-input,input.doc-input{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);clip-path:inset(50%);white-space:nowrap;border:0;background:transparent}
+body.dark-theme .doc-zona:hover,body.dark-theme .doc-zona.arrastre{background:#222b36}
+body.dark-theme .doc-btn{background:#1b222c;border-color:#394657;color:#d0d7de}
+body.dark-theme .doc-btn:hover{background:#222b36;border-color:#4a5a6d;color:#e6edf3}
+body.dark-theme .doc-box.doc-lleno{background:#111820}
+
+/* Cualquier input de archivo que quede suelto (sin el control de arriba),
+   para que tampoco muestre el botón feo del navegador. */
+input[type=file]{font-size:12px;color:var(--muted);background:var(--input-bg);border:1px solid var(--input-border);border-radius:6px;padding:5px}
+input[type=file]::file-selector-button{margin-right:9px;border:1px solid var(--input-border);border-radius:5px;padding:5px 10px;background:var(--surface-2);color:var(--text);font-size:12px;font-weight:600;cursor:pointer}
+input[type=file]::file-selector-button:hover{background:#e4e7ec}
+body.dark-theme input[type=file]::file-selector-button{background:#1b222c;border-color:#394657;color:#d0d7de}
+
+/* Aviso de error dentro de los modales: antes, si el guardado fallaba, el
+   formulario no decía nada y el problema solo se veía en la consola. */
+.aviso-error{margin:12px 0 0;padding:9px 12px;border:1px solid #fecdca;background:#fef3f2;color:var(--danger);border-radius:6px;font-size:12px;line-height:1.45}
+body.dark-theme .aviso-error{background:#2a1614;border-color:#7a2e28;color:#fda29b}
+
+/* ---------------------------------------------------------------------------
+   Ficha de información de impresión.
+   El alert() del navegador (cuadro gris del sistema operativo) rompía la
+   estética de la aplicación y perdía el detalle del documento. Esto lo
+   sustituye por una tarjeta centrada con el resumen del documento, los pasos a
+   seguir y los botones de acción. Usa las mismas variables que el resto de la
+   interfaz, así que respeta el tema oscuro automáticamente.
+   --------------------------------------------------------------------------- */
+.ficha-impresion{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(16,24,40,.55);display:flex;align-items:center;justify-content:center;z-index:10050;padding:20px;animation:ficha-vela .16s ease-out}
+.ficha-box{background:var(--surface);color:var(--text);border-radius:12px;width:92%;max-width:540px;max-height:calc(100vh - 80px);overflow-y:auto;box-shadow:0 24px 48px -12px rgba(16,24,40,.30);animation:ficha-entra .20s ease-out}
+.ficha-cabecera{display:flex;gap:14px;align-items:flex-start;padding:22px 24px 18px;border-bottom:1px solid var(--border)}
+.ficha-icono{flex:0 0 auto;width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center}
+.ficha-icono svg{width:22px;height:22px}
+.ficha-exito .ficha-icono{background:#ecfdf3;color:#027a48}
+.ficha-advertencia .ficha-icono{background:#fffaeb;color:#b54708}
+.ficha-error .ficha-icono{background:#fef3f2;color:#b42318}
+.ficha-titulos{flex:1 1 auto;min-width:0}
+.ficha-titulo{margin:0 0 3px;font-size:17px;font-weight:650;letter-spacing:-.1px}
+.ficha-subtitulo{margin:0;font-size:13px;line-height:1.5;color:var(--muted)}
+.ficha-cerrar{flex:0 0 auto;background:none;border:none;font-size:22px;line-height:1;cursor:pointer;color:var(--muted);padding:0 4px;border-radius:6px}
+.ficha-cerrar:hover{background:var(--surface-2);color:var(--text)}
+.ficha-cuerpo{padding:18px 24px 0}
+
+
+/* Resumen del documento: replica el membrete que verá impreso, para que el
+   usuario confirme que está sacando la foto correcta antes de imprimir. */
+.ficha-doc{border:1px solid var(--border);border-radius:9px;padding:13px 15px;background:var(--surface-2);margin-bottom:16px}
+.ficha-doc-titulo{font-size:12px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;color:var(--primary);margin-bottom:8px}
+.ficha-doc-fila{display:flex;justify-content:space-between;gap:14px;padding:4px 0;font-size:13px}
+.ficha-doc-fila:last-child{padding-bottom:0}
+.ficha-doc-clave{color:var(--muted);flex:0 0 auto}
+.ficha-doc-valor{font-weight:600;text-align:right;word-break:break-word;min-width:0}
+/* Vista previa de la imagen del documento, para reconocerla de un vistazo. */
+.ficha-doc-mini{display:block;max-width:100%;max-height:120px;margin:11px auto 0;border-radius:6px;border:1px solid var(--border);object-fit:contain}
+
+/* Pasos a seguir: el camino exacto hasta tener el papel o el PDF en la mano. */
+.ficha-pasos{margin:0 0 18px;padding:0;list-style:none;display:flex;flex-direction:column;gap:10px}
+.ficha-paso{display:flex;gap:10px;align-items:flex-start;font-size:13px;line-height:1.5;color:var(--muted)}
+.ficha-paso-num{flex:0 0 auto;width:20px;height:20px;border-radius:50%;background:#eef1f5;color:var(--primary);font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;margin-top:1px}
+.ficha-paso b{display:block;color:var(--text);font-weight:600}
+.ficha-pie{display:flex;gap:9px;justify-content:flex-end;padding:0 24px 22px;flex-wrap:wrap}
+.ficha-pie .btn{justify-content:center}
+@keyframes ficha-entra{from{opacity:0;transform:translateY(-10px) scale(.98)}to{opacity:1;transform:none}}
+@keyframes ficha-vela{from{opacity:0}to{opacity:1}}
+/* Botón de "confirmar" en rojo sólido: se usa en los diálogos de acciones que
+   borran o desactivan algo, para que no se confunda con el botón normal. */
+.btn-danger-solido{background:#d92d20;border-color:#d92d20;color:#fff}
+.btn-danger-solido:hover{background:#b42318;border-color:#b42318}
+.ficha-box-dialogo{width:92%;max-width:460px}
+.ficha-dialogo .ficha-pie{padding-top:20px}
+
+body.dark-theme .ficha-exito .ficha-icono{background:#0d2a1c;color:#4ade80}
+body.dark-theme .ficha-advertencia .ficha-icono{background:#2c2410;color:#fbbf24}
+body.dark-theme .ficha-error .ficha-icono{background:#2a1614;color:#fda29b}
+body.dark-theme .ficha-paso-num{background:#222b36;color:#d0d7de}
+@media(prefers-reduced-motion:reduce){.ficha-impresion,.ficha-box{animation:none}}
+
+/* Tema oscuro tipo código: solo apariencia, sin cambiar lógica ni datos. */
+body.dark-theme{--bg:#0f141a;--surface:#151b22;--surface-2:#1b222c;--border:#2b3542;--text:#e6edf3;--muted:#8b98a7;--primary:#66758a;--primary-hover:#7b8ca3;--input-bg:#111820;--input-border:#394657;--focus:#8293a8}body.dark-theme .topbar,body.dark-theme .statusbar{background:#121820}body.dark-theme th{background:#1a212a}body.dark-theme .btn-secondary{background:#1b222c;color:#d0d7de;border-color:#394657}body.dark-theme .tab-btn:hover{background:#1b222c}body.dark-theme .modal-overlay{background:rgba(0,0,0,.68)}body.dark-theme .menu-item.active{background:#e6edf3;color:#20252b}
+@media(max-width:1100px){.sidebar{width:220px}.app-shell{grid-template-columns:220px minmax(0,1fr)}.cards{grid-template-columns:repeat(2,1fr)}.module-grid{grid-template-columns:1fr 1fr}.content{padding:22px}.empresa-nombre{max-width:160px;font-size:13.5px}}
+@media(max-width:900px){body{min-width:0}.app-shell{grid-template-columns:190px minmax(0,1fr)}.sidebar{width:190px}.form-grid{grid-template-columns:1fr}.statusbar-right .statusbar-item:last-child{display:none}.topbar-marca{display:none}}
+.text-muted{color:var(--muted)}.w-full{width:100%}
+
+/* Sidebar plegable: se guarda en localStorage y se reduce a solo iconos. */
+.app-shell{transition:grid-template-columns .18s ease}
+.app-shell.sidebar-colapsado{grid-template-columns:74px minmax(0,1fr)}
+.sidebar-colapsado .sidebar{width:74px}
+.sidebar-colapsado .brand{justify-content:center;padding:8px 0 22px}
+.sidebar-colapsado .brand>div{display:none}
+.sidebar-colapsado .menu-item{justify-content:center;padding:11px 0}
+.sidebar-colapsado .menu-item span{display:none}
+.sidebar-colapsado .sidebar-footer{display:none}
+.sidebar-colapsado .sidebar-toggle svg{transform:rotate(180deg)}
+
+/* Encabezado de página: título a la izquierda y botones de acción a la derecha.
+   Uso: <div class="page-intro page-head"> ... <div class="page-actions">botones</div></div>
+   Los botones se acomodan solos cuando la ventana es angosta, sin márgenes
+   sueltos entre ellos (que era lo que los dejaba desalineados). */
+.page-head{display:flex;justify-content:space-between;align-items:flex-start;gap:18px;flex-wrap:wrap}
+.page-head.compact{margin-bottom:14px;align-items:center}
+.page-actions{display:flex;align-items:center;justify-content:flex-end;gap:9px;flex-wrap:wrap;margin-left:auto}
+.page-actions .btn{font-weight:600;min-height:36px}
+
+/* Ficha de sesión en el pie del sidebar: quién entró y los dos botones
+   (cambiar contraseña y cerrar sesión). Se apoya en .menu-item para heredar
+   el comportamiento del menú, y con .salir se distingue el cierre de sesión. */
+.sidebar-sesion{margin-top:auto;flex:0 0 auto;padding-top:12px;border-top:1px solid rgba(255,255,255,.06);display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+.sidebar-avatar{width:32px;height:32px;flex:0 0 auto;border-radius:50%;background:#475467;color:#fff;display:grid;place-items:center;font-size:12px;font-weight:700;letter-spacing:.3px}
+.sidebar-sesion-datos{flex:1 1 auto;min-width:0;line-height:1.25}
+.sidebar-sesion-datos strong{display:block;font-size:12.5px;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sidebar-sesion-datos span{display:block;font-size:11px;color:#aab1ba}
+.sidebar-sesion-boton{width:100%;border:0;background:transparent;color:#cbd0d6;text-align:left;padding:8px 10px;border-radius:7px;font-size:12.5px;display:flex;align-items:center;gap:8px;flex:0 0 auto}
+.sidebar-sesion-boton svg{width:16px;height:16px;flex:0 0 auto;opacity:.8}
+.sidebar-sesion-boton:hover{background:var(--sidebar-hover);color:#fff}
+.sidebar-sesion-boton.salir{color:#f0a9a2}
+.sidebar-sesion-boton.salir:hover{background:#3a2320;color:#ffd6d1}
+body.dark-theme .sidebar-sesion-boton.salir{color:#f97066}
+
+/* Con el sidebar plegado solo quedan el avatar y los dos botones como icono. */
+.sidebar-colapsado .sidebar-sesion{justify-content:center;padding:10px 0 0}
+.sidebar-colapsado .sidebar-sesion-datos{display:none}
+.sidebar-colapsado .sidebar-sesion-boton{justify-content:center;padding:9px 0}
+.sidebar-colapsado .sidebar-sesion-boton span{display:none}
+
+/* ---------------------------------------------------------------------------
+   Pantalla de acceso y de configuración inicial.
+
+   Diseño de dos columnas: a la izquierda, la presentación (marca, resumen de lo
+   que hace el sistema) sobre un panel oscuro; a la derecha, el formulario sobre
+   fondo claro. Así la pantalla se ve como una pantalla de acceso real y no como
+   un cuadro suelto en el centro.
+
+   En ventanas angostas la columna de presentación se oculta y el formulario
+   ocupa todo el ancho, para que nunca quede apretado.
+   --------------------------------------------------------------------------- */
+.acceso{position:fixed;inset:0;z-index:10000;display:grid;grid-template-columns:1.05fr .95fr;background:var(--bg);overflow:auto}
+.acceso[hidden]{display:none}
+
+.acceso-mitad{display:flex;flex-direction:column;min-width:0}
+.acceso-presentacion{justify-content:center;gap:26px;padding:56px 60px;background:linear-gradient(155deg,#1b2027 0%,#232a33 52%,#2c3540 100%);color:#fff;position:relative;overflow:hidden}
+/* Halo suave en la esquina: da profundidad sin usar imágenes externas. */
+.acceso-presentacion::after{content:'';position:absolute;width:520px;height:520px;right:-190px;top:-170px;border-radius:50%;background:radial-gradient(circle,rgba(71,84,103,.55) 0%,rgba(71,84,103,0) 68%);pointer-events:none}
+.acceso-marca{display:flex;align-items:center;gap:12px;position:relative;z-index:1}
+.acceso-marca .brand-mark{background:#475467}
+.acceso-marca strong{display:block;font-size:16.5px;letter-spacing:.2px}
+.acceso-marca span{display:block;margin-top:3px;color:#aab1ba;font-size:12.5px}
+.acceso-lema{margin:0;font-size:29px;line-height:1.28;font-weight:650;letter-spacing:-.4px;max-width:15ch;position:relative;z-index:1}
+.acceso-lista{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:13px;position:relative;z-index:1}
+.acceso-lista li{display:flex;align-items:flex-start;gap:11px;font-size:14px;line-height:1.5;color:#d0d7de}
+.acceso-lista svg{width:17px;height:17px;flex:0 0 auto;margin-top:2px;opacity:.75}
+.acceso-pie{margin:6px 0 0;font-size:12.5px;color:#8b98a7;position:relative;z-index:1}
+
+.acceso-formulario{justify-content:center;align-items:center;padding:48px 40px;background:var(--surface)}
+.acceso-caja{width:100%;max-width:372px}
+.acceso-titulo{margin:0 0 6px;font-size:24px;font-weight:680;letter-spacing:-.3px}
+.acceso-subtitulo{margin:0 0 26px;color:var(--muted);font-size:13.5px;line-height:1.55}
+
+/* Campos: etiqueta arriba, control con marco y foco visible. El icono va dentro
+   del recuadro (campo-icono) y el botón del ojo va al borde derecho. */
+.acceso .campo{display:flex;flex-direction:column;gap:6px;margin-bottom:15px}
+.acceso .campo label{color:var(--text);font-size:12.5px;font-weight:600;opacity:.9}
+.acceso .campo input{border:1px solid var(--input-border);border-radius:7px;padding:11px 13px;font-size:14px;background:var(--input-bg);color:var(--text);outline:none;transition:border-color .15s ease,box-shadow .15s ease;width:100%}
+.acceso .campo input::placeholder{color:#98a2b3}
+.acceso .campo input:focus{border-color:var(--focus);box-shadow:0 0 0 3px rgba(102,112,133,.15)}
+.campo-icono{position:relative;display:flex;align-items:center}
+.campo-icono>svg{position:absolute;left:12px;width:17px;height:17px;color:var(--muted);pointer-events:none}
+/* El relleno del icono y el del botón del ojo necesitan MÁS especificidad que
+   ".acceso .campo input" (2 clases + 1 elemento): si no, el texto del campo se
+   monta encima del icono. Por eso se ancla también bajo ".acceso .campo". */
+.acceso .campo .campo-icono>input{padding-left:38px}
+
+/* Campo con botón de mostrar/ocultar contraseña: el botón va pegado al borde
+   derecho, dentro del recuadro, sin deformarlo. */
+.campo-clave{position:relative}
+.acceso .campo .campo-clave>input{padding-right:44px}
+.campo-ver{position:absolute;right:4px;top:50%;transform:translateY(-50%);width:32px;height:32px;display:grid;place-items:center;background:transparent;border:0;border-radius:5px;color:var(--muted);cursor:pointer}
+.campo-ver:hover{background:var(--surface-2);color:var(--text)}
+.campo-ver svg{width:17px;height:17px}
+.campo-ver:focus-visible{outline:2px solid var(--focus);outline-offset:-2px}
+
+/* Mensaje de error dentro del formulario: se muestra arriba del botón para que
+   no salte a otra parte de la pantalla. */
+.acceso-error{display:flex;align-items:flex-start;gap:9px;margin:2px 0 16px;padding:10px 12px;border:1px solid #fecdca;background:#fef3f2;color:#b42318;border-radius:7px;font-size:12.5px;line-height:1.5}
+.acceso-error[hidden]{display:none}
+.acceso-error::before{content:'!';flex:0 0 auto;width:16px;height:16px;margin-top:1px;border-radius:50%;background:#f04438;color:#fff;font-size:11px;font-weight:700;display:grid;place-items:center}
+/* Variante informativa: avisos que no son error (sesión cerrada, contraseña
+   actualizada) se muestran en azul con un icono de información. */
+.acceso-error.es-informativo{border-color:#b2ddff;background:#eff8ff;color:#175cd3}
+.acceso-error.es-informativo::before{content:'i';background:#2e90fa;font-family:Georgia,serif;font-style:italic}
+body.dark-theme .acceso-error{background:#2a1614;border-color:#7a2e28;color:#fda29b}
+body.dark-theme .acceso-error.es-informativo{background:#0b2233;border-color:#1f5a8a;color:#84caff}
+body.dark-theme .acceso-error.es-informativo::before{background:#1570cd}
+
+.acceso-boton{width:100%;margin-top:4px;padding:12px;font-size:14.5px;font-weight:600;justify-content:center}
+.acceso-boton:disabled{opacity:.7;cursor:progress}
+/* El indicador gira antes del texto mientras espera el servidor. */
+.acceso-boton.cargando{position:relative}
+.acceso-boton.cargando .acceso-boton-texto{visibility:hidden}
+.acceso-boton.cargando::before{content:'';position:absolute;left:calc(50% - 9px);top:calc(50% - 9px);width:18px;height:18px;border:2px solid rgba(255,255,255,.4);border-top-color:#fff;border-radius:50%;animation:acceso-gira .7s linear infinite}
+@keyframes acceso-gira{to{transform:rotate(360deg)}}
+
+/* Sacudida breve del mensaje de error: refuerza el rechazo sin gritar. */
+.acceso-error.sacudir{animation:acceso-sacudir .32s ease}
+@keyframes acceso-sacudir{
+  0%,100%{transform:translateX(0)}
+  20%{transform:translateX(-5px)}
+  40%{transform:translateX(4px)}
+  60%{transform:translateX(-3px)}
+  80%{transform:translateX(2px)}
+}
+.acceso-nota{display:flex;align-items:flex-start;gap:8px;margin:20px 0 0;color:var(--muted);font-size:12px;line-height:1.5}
+.acceso-nota svg{width:15px;height:15px;flex:0 0 auto;margin-top:1px;opacity:.8}
+
+@media(max-width:940px){
+  .acceso{grid-template-columns:1fr}
+  .acceso-presentacion{display:none}
+  .acceso-formulario{padding:40px 24px}
+}
+@media(prefers-reduced-motion:reduce){.acceso,.acceso-caja{animation:none}}
+
+/* Configuración > Empresa: vista previa del logotipo junto a los controles. */
+.logo-config{display:flex;gap:16px;align-items:flex-start;margin:16px 0 18px;padding:14px;border:1px solid var(--border);border-radius:9px;background:var(--surface-2)}
+.logo-config-preview{width:56px;height:56px;border-radius:11px;font-size:18px;flex:0 0 auto}
+.logo-config-acciones{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;gap:9px;align-items:flex-start}
+.logo-config-acciones .field{width:100%;max-width:420px}
+.logo-config-acciones input[type=file]{padding:7px 9px;cursor:pointer}
+body.dark-theme .logo-config{background:#1b222c}
+
+/* Ficha de pago de viáticos: comprobante del viático por pagar / pagado. */
+.ficha-pago{border:1px solid var(--border);border-radius:10px;overflow:hidden}
+.ficha-pago-cabecera{display:flex;justify-content:space-between;align-items:flex-start;gap:14px;background:var(--surface-2);border-bottom:1px solid var(--border);padding:16px 18px}
+.ficha-pago-rotulo{color:var(--muted);font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase}
+.ficha-pago-monto{font-size:29px;font-weight:700;margin:6px 0 4px}
+.ficha-pago.pagada .ficha-pago-monto{color:var(--success)}
+.ficha-pago-ref{color:var(--muted);font-size:12px}
+.ficha-datos{width:100%;border-collapse:collapse;font-size:13px}
+.ficha-datos th{width:180px;background:transparent;color:var(--muted);font-weight:600;vertical-align:top}
+.ficha-datos th,.ficha-datos td{border-bottom:1px solid var(--border);padding:9px 18px}
+.ficha-datos tr:last-child th,.ficha-datos tr:last-child td{border-bottom:0}
+.ficha-pago-nota{margin:0;padding:12px 18px;background:var(--surface-2);border-top:1px solid var(--border);color:var(--muted);font-size:12px}
+.ficha-pago-error{margin:14px 18px 0;padding:10px 12px;border:1px solid #fecdca;background:#fef3f2;color:var(--danger);border-radius:6px;font-size:12px}
+body.dark-theme .ficha-pago-error{background:#2a1614;border-color:#7a2e28;color:#fda29b}

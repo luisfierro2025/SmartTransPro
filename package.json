@@ -1,0 +1,43 @@
+{
+"name": "smarttranspro",
+"version": "1.0.0",
+"description": "Sistema de gestión y control empresarial de transporte",
+"main": "src/main/main.js",
+"scripts": {
+"start": "electron .",
+"dev": "electron .",
+"dev:nube": "node server/dev.js",
+"build": "electron-builder --win",
+"db:migraciones": "node tools/aplicar-migraciones.js",
+"test:db": "node tools/prueba-base-datos.js",
+"test:ui": "electron tools/prueba-interfaz.js",
+"test:nube": "node tools/prueba-nube.js",
+"test:canales": "node tools/prueba-canales.js",
+"test:impresion": "node tools/prueba-impresion.js",
+"test": "npm run test:db && npm run test:nube && npm run test:canales && npm run test:impresion"
+},
+"dependencies": {
+"better-sqlite3": "^12.4.1",
+"pg": "^8.23.0"
+},
+"devDependencies": {
+"electron": "^38.2.2",
+"electron-builder": "^26.0.12",
+"pg-mem": "^3.0.14"
+},
+"build": {
+"appId": "com.smarttranspro.app",
+"productName": "SmartTransPro",
+"directories": {
+"output": "dist"
+},
+"files": [
+"src/**/*",
+"package.json"
+],
+"win": {
+"target": "nsis",
+"artifactName": "SmartTransPro-Setup-${version}.${ext}"
+}
+}
+}

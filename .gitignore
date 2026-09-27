@@ -1,0 +1,24 @@
+# Dependencias
+node_modules/
+
+# Instalador generado por electron-builder
+dist/
+
+# Credenciales y configuración local (NUNCA subir)
+.env
+
+# Bases de datos locales de la app de escritorio y respaldos
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+*.bak
+
+# Paquetes entregables generados a mano
+*.zip
+
+# Registro de npm y temporales del editor
+npm-debug.log*
+__pycache__/
+.vscode/
