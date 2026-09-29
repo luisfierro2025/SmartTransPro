@@ -94,6 +94,125 @@ async function ejecutar() {
   verificar('La liquidación mueve el monto a liquidado', resViaticos.liquidado === 500 && resViaticos.pendiente === 1000, resViaticos);
   verificar('Los viáticos se pueden consultar por destino', (await operaciones['viaticos:listar'](null, { busqueda: 'León' })).length === 1);
 
+  // Un viaje no se puede cobrar dos veces. Se arma un conductor con dos viajes
+  // de Bitácora para comprobar el alta, la edición y la liberación del viaje.
+  // Los viajes van en octubre a propósito: el generador de comisiones del punto
+  // 6 usa el período 2026-09 y no debe toparse con estos viajes de prueba.
+  const dbViaje = baseDatos.obtenerDB();
+  const condViaje = dbViaje.prepare("INSERT INTO conductores (nombre, documento) VALUES ('Conductor Viático', '001-000000-0003C')").run().lastInsertRowid;
+  const viajeLibre = dbViaje.prepare('INSERT INTO bitacora_viajes (fecha, conductor_id, origen, destino, km_salida, km_llegada, viatico, estado) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+    .run('2026-10-05', condViaje, 'Managua', 'Jinotega', 100, 220, 1200, 'COMPLETADO').lastInsertRowid;
+  const viajeSegundo = dbViaje.prepare('INSERT INTO bitacora_viajes (fecha, conductor_id, origen, destino, km_salida, km_llegada, viatico, estado) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+    .run('2026-10-06', condViaje, 'Managua', 'Ocotal', 100, 300, 900, 'COMPLETADO').lastInsertRowid;
+
+  const disponiblesIniciales = await operaciones['viaticos:viajes_disponibles'](null, { conductor_id: condViaje });
+  verificar('Se ofrecen los viajes del conductor que no tienen viático',
+    disponiblesIniciales.length === 2, disponiblesIniciales.map(v => v.id));
+
+  const viaticoViaje = await operaciones['viaticos:guardar'](null, {
+    conductor_id: condViaje, viaje_id: viajeLibre, fecha: '2026-10-05', destino: 'Jinotega', motivo: 'Traslado', monto: 1200
+  });
+  verificar('El viático se registra con el viaje de Bitácora', !!viaticoViaje.id, viaticoViaje);
+
+  const disponiblesTrasCobrar = await operaciones['viaticos:viajes_disponibles'](null, { conductor_id: condViaje });
+  verificar('El viaje ya cobrado no aparece en el desplegable',
+    disponiblesTrasCobrar.length === 1 && disponiblesTrasCobrar[0].id === viajeSegundo, disponiblesTrasCobrar.map(v => v.id));
+
+  let duplicado = null;
+  try {
+    await operaciones['viaticos:guardar'](null, {
+      conductor_id: condViaje, viaje_id: viajeLibre, fecha: '2026-10-05', destino: 'Jinotega', motivo: 'Repetición', monto: 1200
+    });
+  } catch (e) { duplicado = e.message; }
+  verificar('No se puede cobrar dos veces el mismo viaje', /ya tiene un viático registrado/.test(duplicado || ''), duplicado);
+
+  const editables = await operaciones['viaticos:viajes_disponibles'](null, { conductor_id: condViaje, viatico_id: viaticoViaje.id });
+  verificar('Al editar, el viaje del propio viático sigue disponible',
+    editables.length === 2 && editables.some(v => v.id === viajeLibre), editables.map(v => v.id));
+
+  const actualizado = await operaciones['viaticos:guardar'](null, {
+    id: viaticoViaje.id, conductor_id: condViaje, viaje_id: viajeLibre, fecha: '2026-10-05', destino: 'Jinotega', motivo: 'Traslado', monto: 1500
+  });
+  verificar('Editar el viático sobre su propio viaje se permite', actualizado.ok === true, actualizado);
+
+  await operaciones['viaticos:eliminar'](null, viaticoViaje.id);
+  const disponiblesTrasBorrar = await operaciones['viaticos:viajes_disponibles'](null, { conductor_id: condViaje });
+  verificar('Al eliminar el viático, el viaje vuelve a estar disponible',
+    disponiblesTrasBorrar.length === 2, disponiblesTrasBorrar.map(v => v.id));
+
+  // El índice único de la base es la última línea de defensa: aunque se saltee
+  // la validación de la aplicación, la base no admite dos viáticos por viaje.
+  const idxUnico = dbViaje.prepare("SELECT COUNT(*) total FROM sqlite_master WHERE type='index' AND name='idx_viaticos_viaje_unico'").get().total;
+  verificar('La base crea el índice único de viáticos por viaje', idxUnico === 1, idxUnico);
+  // Sin id de viático el filtro se arma sin parámetros nulos: PostgreSQL aborta
+  // con "could not determine data type of parameter" (42P18) si se le envía un
+  // NULL que no puede deduplicar. SQLite lo toleraba y por eso pasó inadvertido.
+  const sinParametrosNulos = await operaciones['viaticos:viajes_disponibles'](null, { conductor_id: condViaje });
+  verificar('El filtro funciona sin enviar parámetros nulos',
+    sinParametrosNulos.length === 2, sinParametrosNulos.map(v => v.id));
+  // Se vuelve a cobrar el viaje para que el INSERT directo de abajo sea realmente
+  // un duplicado (antes se eliminó el viático para comprobar que se liberaba).
+  await operaciones['viaticos:guardar'](null, {
+    conductor_id: condViaje, viaje_id: viajeLibre, fecha: '2026-10-05', destino: 'Jinotega', motivo: 'Segundo cobro', monto: 1200
+  });
+  let bloqueoIndice = null;
+  try {
+    dbViaje.prepare('INSERT INTO viaticos (conductor_id, viaje_id, fecha, destino, motivo, monto, liquidado, estado) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+      .run(condViaje, viajeLibre, '2026-10-05', 'Jinotega', 'Directo a la base', 1200, 0, 'PENDIENTE');
+  } catch (e) { bloqueoIndice = e.message; }
+  verificar('La base rechaza el segundo viático del mismo viaje', /UNIQUE|unique/i.test(bloqueoIndice || ''), bloqueoIndice);
+
+  // Sin viaje un duplicado es legítimo (viáticos sueltos, sin vínculo con Bitácora).
+  await operaciones['viaticos:guardar'](null, { conductor_id: condViaje, fecha: '2026-10-07', destino: 'Granada', motivo: 'Gestión', monto: 300 });
+  await operaciones['viaticos:guardar'](null, { conductor_id: condViaje, fecha: '2026-10-08', destino: 'Granada', motivo: 'Gestión', monto: 300 });
+  verificar('Los viáticos sin viaje se pueden repetir', (await operaciones['viaticos:listar'](null, { busqueda: 'Granada' })).length === 2);
+
+  // Tablero del dashboard. Se consulta un rango fijo (2026-09) donde ya hay
+  // ingresos y egresos de la sección 4, para poder comprobar las cuentas.
+  const tablero = await operaciones['dashboard:tablero'](null, { desde: '2026-09-01', hasta: '2026-09-30' });
+  verificar('El tablero devuelve las secciones que la pantalla usa',
+    ['financiero', 'serie', 'operativo', 'pendientes'].every(s => tablero[s] !== undefined),
+    Object.keys(tablero));
+  // En la sección 4 se registraron dos ingresos en 2026-09 (5000 + 2500) y un
+  // egreso de 1800 que luego se borró, así que solo quedan los ingresos.
+  verificar('El tablero suma los ingresos del período',
+    tablero.financiero.ingresos === 7500, tablero.financiero.ingresos);
+  verificar('El tablero descuenta los egresos que quedaron',
+    tablero.financiero.egresos === 0, tablero.financiero.egresos);
+  verificar('La utilidad es ingresos menos egresos y costos operativos',
+    tablero.financiero.utilidad === tablero.financiero.ingresos - tablero.financiero.egresos - tablero.financiero.costosOperativos,
+    tablero.financiero);
+  // El margen puede ser NEGATIVO (en este caso la planilla de la sección 3
+  // supera los ingresos), porque eso significa pérdida, no un error. Lo que no
+  // puede ser es NaN ni texto.
+  verificar('El margen es un número real, también si es pérdida',
+    typeof tablero.financiero.margen === 'number' && Number.isFinite(tablero.financiero.margen)
+      && Math.abs(tablero.financiero.margen - (tablero.financiero.utilidad / tablero.financiero.ingresos)) < 0.0001,
+    tablero.financiero.margen);
+  // Todos los números llegan como número, no como texto: en PostgreSQL un SUM
+  // puede venir como string y el margen se calculaba como NaN en la pantalla.
+  const numeros = ['ingresos', 'egresos', 'planilla', 'combustible', 'viaticos', 'utilidad', 'costosOperativos'];
+  verificar('El tablero entrega números y no textos (evita NaN en pantalla)',
+    numeros.every(k => typeof tablero.financiero[k] === 'number' && !Number.isNaN(tablero.financiero[k])),
+    numeros.map(k => `${k}=${tablero.financiero[k]}(${typeof tablero.financiero[k]})`));
+  verificar('La serie mensual trae barras de tipo AAAA-MM',
+    tablero.serie.every(m => /^\d{4}-\d{2}$/.test(m.mes) && typeof m.ingresos === 'number' && typeof m.egresos === 'number'),
+    tablero.serie);
+  verificar('La serie viene ordenada de más antiguo a más reciente',
+    tablero.serie.every((m, i) => i === 0 || tablero.serie[i - 1].mes < m.mes),
+    tablero.serie.map(m => m.mes));
+  verificar('La serie cubre seis meses hacia atrás',
+    tablero.serie.length > 0 && tablero.serie.length <= 6, tablero.serie.length);
+  verificar('El tablero compara contra el período anterior',
+    tablero.rango.previo.hasta < tablero.rango.desde, tablero.rango);
+  verificar('Las categorías traen su total como número',
+    tablero.financiero.porCategoriaIngresos.every(c => typeof c.total === 'number'),
+    tablero.financiero.porCategoriaIngresos);
+  // Los viáticos pendientes son deuda con el conductor: se cuentan todos, no
+  // solo los del mes, así que el monto pendiente de la sección 5 debe estar ahí.
+  verificar('El tablero informa los viáticos pendientes de liquidar',
+    tablero.pendientes.viaticos >= 600, tablero.pendientes);
+
   console.log('\n6) Comisiones');
   // Las comisiones se pagan a un conductor por sus viajes: se crean el conductor
   // y el viaje que la comisión referencia (catálogos que maneja Bitácora/Flota).
@@ -332,7 +451,7 @@ async function ejecutar() {
   verificar('La migración conserva los datos y calcula kilómetros',
     viajeMigrado && viajeMigrado.km_recorridos === 75, viajeMigrado);
   verificar('La base migrada queda en la versión vigente',
-    dbMigrada.pragma('user_version', { simple: true }) === 6,
+    dbMigrada.pragma('user_version', { simple: true }) === 7,
     dbMigrada.pragma('user_version', { simple: true }));
   verificar('La migración crea la tabla de comisiones en bases anteriores',
     dbMigrada.prepare("SELECT COUNT(*) total FROM sqlite_master WHERE type='table' AND name='comisiones'").get().total === 1);

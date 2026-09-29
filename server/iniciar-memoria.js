@@ -35,6 +35,23 @@ async function iniciarMemoria() {
     returns: DataType.text,
     implementation: (texto, inicio, largo) => String(texto).substr(inicio - 1, largo)
   });
+  // to_char(fecha,'YYYY-MM') acorta una fecha a su mes. Es la forma en que
+  // PostgreSQL agrupa por mes (el traductor convierte substr(cast(...)) en
+  // to_char). pg-mem no la trae, pero PostgreSQL sí, y sin ella la prueba en
+  // memoria fallaría donde la base real funciona.
+  memoria.public.registerFunction({
+    name: 'to_char',
+    args: [DataType.date, DataType.text],
+    returns: DataType.text,
+    implementation: (fecha, formato) => {
+      const f = fecha instanceof Date ? fecha : new Date(fecha);
+      const mes = String(f.getUTCMonth() + 1).padStart(2, '0');
+      const anio = f.getUTCFullYear();
+      // Solo se usa el formato 'YYYY-MM' en la aplicación: el resto devuelve
+      // la fecha completa para que un formato nuevo no devuelva algo inventado.
+      return formato === 'YYYY-MM' ? `${anio}-${mes}` : `${anio}-${mes}-01`;
+    }
+  });
 
   // Sustituye el módulo 'pg' por el adaptador en memoria.
   require.cache[require.resolve('pg')] = {

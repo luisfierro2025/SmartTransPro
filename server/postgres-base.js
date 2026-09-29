@@ -42,7 +42,9 @@ if (types && typeof types.setTypeParser === 'function') {
 //   3 -> supabase/migrations/0003_comisiones.sql (tabla comisiones)
 //   4 -> supabase/migrations/0004_conductores_documentos.sql (licencia y fotos del conductor)
 //   5 -> supabase/migrations/0005_usuarios_sesiones.sql (tablas usuarios y sesiones)
-const VERSION_ESQUEMA = 5;
+//   6 -> supabase/migrations/0006_viaticos_viaje_unico.sql (un viático por viaje)
+//   7 -> supabase/migrations/0007_monitoreo_gps.sql (dispositivos_gps y posiciones_gps)
+const VERSION_ESQUEMA = 7;
 let pool = null;
 let clienteEnTransaccion = null;
 
@@ -330,13 +332,56 @@ const TABLAS_AGREGADAS = [
       'create index if not exists idx_sesiones_usuario     on sesiones(usuario_id)',
       'create index if not exists idx_sesiones_vencimiento on sesiones(expira_en_ms)'
     ]
+  },
+  // Monitoreo por GPS de teléfonos (migración 0007).
+  {
+    tabla: 'dispositivos_gps',
+    definicion: `create table if not exists dispositivos_gps (
+      id             bigint generated always as identity primary key,
+      conductor_id   bigint not null unique references conductores(id) on delete cascade,
+      vehiculo_id    bigint references vehiculos(id) on delete set null,
+      token_hash     text not null unique,
+      activo         boolean not null default true,
+      lat            numeric(10,6),
+      lng            numeric(10,6),
+      precision_m    numeric(10,2),
+      velocidad_kmh  numeric(8,2),
+      rumbo          numeric(6,2),
+      bateria        numeric(5,1),
+      ultimo_reporte timestamptz,
+      created_at     timestamptz not null default now()
+    )`,
+    indices: []
+  },
+  {
+    tabla: 'posiciones_gps',
+    definicion: `create table if not exists posiciones_gps (
+      id            bigint generated always as identity primary key,
+      dispositivo_id bigint not null references dispositivos_gps(id) on delete cascade,
+      lat           numeric(10,6) not null,
+      lng           numeric(10,6) not null,
+      precision_m   numeric(10,2),
+      velocidad_kmh numeric(8,2),
+      registrado_en timestamptz not null
+    )`,
+    indices: ['create index if not exists idx_posiciones_disp_fecha on posiciones_gps(dispositivo_id, registrado_en)']
   }
 ];
 
 const INDICES_AGREGADOS = [
   'create index if not exists idx_viaticos_conductor on viaticos(conductor_id)',
-  'create index if not exists idx_viaticos_viaje on viaticos(viaje_id)'
+  'create index if not exists idx_viaticos_viaje on viaticos(viaje_id)',
+  // Un viaje no se puede cobrar con dos viáticos (índice parcial: los viáticos
+  // sin viaje no colisionan entre sí). Se crea aparte porque, si la base ya
+  // tuviera duplicados, falla y no debe tumbar el arranque de la aplicación.
+  'create unique index if not exists idx_viaticos_viaje_unico on viaticos(viaje_id) where viaje_id is not null'
 ];
+
+// Índices que pueden fallar sin que la aplicación deje de funcionar. Si el
+// índice único de viáticos no se crea (porque ya hay duplicados de antes), se
+// avisa por consola y se sigue: la validación de guardarViatico ya impide
+// cobrar dos veces el mismo viaje.
+const INDICES_TOLERANTES = new Set(['idx_viaticos_viaje_unico']);
 
 let esquemaAsegurado = null;
 
@@ -370,7 +415,18 @@ function asegurarEsquema() {
         await pool.query(`alter table ${tabla} add column if not exists ${columna} ${definicion}`);
         console.log(`[postgres] esquema corregido: se agregó ${tabla}.${columna}`);
       }
-      for (const sql of INDICES_AGREGADOS) await pool.query(sql);
+      for (const sql of INDICES_AGREGADOS) {
+        try {
+          await pool.query(sql);
+        } catch (error) {
+          const indice = (sql.match(/exists (\w+)/) || [])[1];
+          if (!INDICES_TOLERANTES.has(indice)) throw error;
+          console.warn(
+            `[postgres] no se creó el índice ${indice}: la base ya tiene viáticos duplicados por viaje. ` +
+            'La aplicación sigue funcionando y solo impide cobros duplicados nuevos.'
+          );
+        }
+      }
       return true;
     })().catch((error) => {
       esquemaAsegurado = null; // permite reintentar en la próxima llamada

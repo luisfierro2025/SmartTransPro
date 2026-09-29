@@ -88,7 +88,7 @@ function servirEstatico(req, res) {
 const { iniciarMemoria } = require('./iniciar-memoria');
 
 async function main() {
-  console.log('\n=== Control Empresa - entorno web ===\n');
+  console.log('\n=== SmartTransPro - entorno web ===\n');
 
   if (SIN_BASE) {
     console.log('  Base de datos : PostgreSQL EN MEMORIA (pg-mem)');
@@ -102,6 +102,9 @@ async function main() {
     // rompe la interfaz con "column ... does not exist".
     const { inicializarBaseDatos } = require('./database-nube');
     await inicializarBaseDatos();
+    const { restaurarRespaldoInicial } = require('./restaurar-respaldo-inicial');
+    const recuperacion = await restaurarRespaldoInicial();
+    if (recuperacion.restaurado) console.log(`  Recuperación   : ${recuperacion.alcance}\n`);
     console.log('  Esquema       : verificado contra supabase/migrations\n');
   }
 
@@ -136,8 +139,9 @@ async function main() {
     }
   });
 
-  servidor.listen(PUERTO, () => {
-    console.log(`  >> http://localhost:${PUERTO}\n`);
+     const HOST = process.env.HOST || '0.0.0.0';
+  servidor.listen(PUERTO, HOST, () => {
+    console.log(`  >> http://${HOST}:${PUERTO}\n`);
   });
 }
 

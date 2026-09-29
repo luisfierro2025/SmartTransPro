@@ -120,7 +120,9 @@ function imprimirContenido({ titulo, filtrosTexto, resumenHtml, cuerpoHtml }) {
         .filtros{margin-bottom:14px;font-size:12.5px;color:#344054;background:#f2f4f7;padding:8px 12px;border-radius:6px}
         table{width:100%;border-collapse:collapse;font-size:12px}
         th,td{border:1px solid #d0d5dd;padding:6px 8px;text-align:left}
-        th{background:#f2f4f7}
+        /* Mismo color que el sidebar de la aplicación, para que el documento
+           impreso se vea como la pantalla de donde se generó. */
+        th{background:#20252b;color:#fff;border-color:#20252b}
         .badge{display:inline-block;padding:2px 7px;border-radius:10px;font-size:10px;font-weight:700;border:1px solid #d0d5dd}
         .pie{margin-top:18px;font-size:10.5px;color:#98a2b3;text-align:right}
         button, .btn, .action-buttons{display:none !important}
@@ -186,7 +188,7 @@ function documentoProfesionalHtml({ titulo, subtitulo, filtrosTexto, resumenHtml
         .resumen-caja .et{font-size:10px;color:#667085;text-transform:uppercase;letter-spacing:.3px}
         .resumen-caja .val{font-size:16px;font-weight:700;color:#17202a;margin-top:4px}
         table{width:100%;border-collapse:collapse;font-size:11.5px}
-        thead th{background:#344054;color:#fff;text-align:left;padding:8px 9px;font-weight:600}
+        thead th{background:#20252b;color:#fff;text-align:left;padding:8px 9px;font-weight:600}
         tbody td{border-bottom:1px solid #e2e6ea;padding:7px 9px}
         tbody tr:nth-child(even){background:#f8f9fa}
         tfoot td{border-top:2px solid #344054;padding:9px;font-weight:700;background:#f2f4f7}
@@ -351,7 +353,9 @@ function mostrarDialogo({
   botonOk = 'Aceptar',
   botonCancelar = null,
   okPeligroso = false,
-  alAceptar = null
+  alAceptar = null,
+  detalles = [],
+  escribir = ''
 } = {}) {
   return new Promise(resolve => {
     quitarDialogo();
@@ -398,6 +402,10 @@ function mostrarDialogo({
             ${mensaje ? `<p class="ficha-subtitulo">${mensaje}</p>` : ''}
           </div>
         </div>
+        ${(detalles.length || escribir) ? `<div class="ficha-cuerpo">
+          ${detalles.length ? `<div class="ficha-doc">${detalles.map(([k, v]) => `<div class="ficha-doc-fila"><span class="ficha-doc-clave">${k}</span><span class="ficha-doc-valor">${v}</span></div>`).join('')}</div>` : ''}
+          ${escribir ? `<label class="ficha-confirma">Escriba <b>${escribir}</b> para confirmar<input type="text" class="ficha-confirma-input" autocomplete="off" spellcheck="false"></label>` : ''}
+        </div>` : ''}
         <div class="ficha-pie">
           ${botonCancelar
             ? `<button type="button" class="btn" data-accion="cancelar">${botonCancelar}</button>`
@@ -407,14 +415,22 @@ function mostrarDialogo({
       </div>`;
 
     document.body.appendChild(velo);
-    velo.querySelector('[data-accion="ok"]').onclick = aceptar;
+    const botonAceptar = velo.querySelector('[data-accion="ok"]');
+    botonAceptar.onclick = aceptar;
+    // Confirmación escrita: el botón queda bloqueado hasta teclear la palabra exacta.
+    const campoConfirma = velo.querySelector('.ficha-confirma-input');
+    if (campoConfirma) {
+      botonAceptar.disabled = true;
+      campoConfirma.addEventListener('input', () => { botonAceptar.disabled = campoConfirma.value.trim() !== escribir; });
+      campoConfirma.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !botonAceptar.disabled) aceptar(); });
+    }
     const cancelar = velo.querySelector('[data-accion="cancelar"]');
     if (cancelar) cancelar.onclick = cerrar;
     // Clic fuera equivale a cancelar, pero solo si existe esa opción.
     velo.addEventListener('click', (e) => { if (e.target === velo && botonCancelar) cerrar(); });
     document.addEventListener('keydown', alPulsarTecla);
     // El foco arranca en la opción segura: Enter nunca borra nada por accidente.
-    (cancelar || velo.querySelector('[data-accion="ok"]')).focus();
+    (campoConfirma || cancelar || botonAceptar).focus();
   });
 }
 
@@ -430,9 +446,24 @@ function confirmarAccion({
   return mostrarDialogo({ estado, titulo, mensaje, botonOk, botonCancelar, okPeligroso });
 }
 
-/** Aviso de un solo botón (sustituye a alert()). */
-function avisar({ estado = 'info', titulo, mensaje = '', boton = 'Entendido' } = {}) {
-  return mostrarDialogo({ estado, titulo, mensaje, botonOk: boton, botonCancelar: null });
+/** Aviso de un solo botón (sustituye a alert()). `detalles` = [[clave, valor], ...] para mostrar una ficha. */
+function avisar({ estado = 'info', titulo, mensaje = '', boton = 'Entendido', detalles = [] } = {}) {
+  return mostrarDialogo({ estado, titulo, mensaje, botonOk: boton, botonCancelar: null, detalles });
+}
+
+/** Escapa texto dinámico (errores, nombres) antes de meterlo en un diálogo, que acepta HTML. */
+function textoSeguro(t) {
+  return String(t === undefined || t === null ? '' : t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+/** Aviso de validación (campos que faltan o datos incorrectos). */
+function avisarAdvertencia(titulo, mensaje = '', boton = 'Entendido') {
+  return avisar({ estado: 'advertencia', titulo, mensaje: textoSeguro(mensaje), boton });
+}
+
+/** Confirmación que exige teclear una palabra (sustituye a prompt() en acciones destructivas). */
+function confirmarEscribiendo({ titulo, mensaje = '', palabra = 'BORRAR', botonOk = 'Confirmar', botonCancelar = 'Cancelar' } = {}) {
+  return mostrarDialogo({ estado: 'error', titulo, mensaje, botonOk, botonCancelar, okPeligroso: true, escribir: palabra });
 }
 
 /** Aviso de éxito tras guardar o completar una acción. */
@@ -442,7 +473,7 @@ function avisarExito(titulo, mensaje = '', boton = 'Entendido') {
 
 /** Aviso de error con el detalle que nos pasó. */
 function avisarError(titulo, mensaje = '', boton = 'Entendido') {
-  return avisar({ estado: 'error', titulo, mensaje, boton });
+  return avisar({ estado: 'error', titulo, mensaje: textoSeguro(mensaje), boton });
 }
 
 // ============================================================================

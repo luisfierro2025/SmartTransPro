@@ -60,6 +60,13 @@ const DATOS = {
   // El viático se liga a un conductor y a un viaje reales: así la prueba cubre
   // el JOIN de viaticos:listar (conductor_nombre / viaje_*) y no solo el INSERT.
   'viaticos:guardar': { fecha: '2026-09-25', conductor_id: 1, viaje_id: 1, destino: 'León', motivo: 'Traslado', monto: 500 },
+  // Viajes que aún se pueden cobrar con un viático. Antes de que corra
+  // viaticos:guardar el viaje 1 está libre; el canal devuelve una lista, así que
+  // solo se verifica que responda sin error.
+  'viaticos:viajes_disponibles': { conductor_id: 1, viatico_id: null },
+  // El tablero del dashboard se consulta sin rango para que use el mes en curso
+  // (la prueba corre con fechas de 2026-09, el mismo mes).
+  'dashboard:tablero': {},
   'planilla:guardar': { periodo: '2026-09', fecha_pago: '2026-09-30', detalle: [] },
   'planilla:generar': { periodo: '2026-09', fecha_pago: '2026-09-30' },
   // La comisión se liga a un conductor y a un viaje reales: así la prueba cubre
@@ -145,6 +152,22 @@ async function ejecutar() {
   DATOS['usuarios:eliminar'] = { token: TOKENS.admin, id: idBorrable };
   DATOS['usuarios:restablecer_clave'] = { token: TOKENS.admin, id: idRestablecible, clave: 'restaurada123' };
   DATOS['usuarios:cambiar_clave'] = { token: TOKENS.sesion, clave_actual: 'claveoriginal1', clave_nueva: 'sesion456' };
+
+  // Monitoreo GPS: flujo completo (vincular -> reportar -> listar) y rechazos.
+  const disp = await ejecutarCanal('monitoreo:vincular', { token: TOKENS.admin, conductor_id: 1 });
+  const rep = await ejecutarCanal('monitoreo:reportar', { clave: disp.clave, lat: 12.13, lng: -86.25, velocidad: 40, bateria: 80 });
+  verificar('Monitoreo: el teléfono vinculado reporta su posición', rep.ok === true && rep.recibidos === 1, rep);
+  const vivo = await ejecutarCanal('monitoreo:listar', { token: TOKENS.admin });
+  const filaGps = vivo.conductores.find((c) => Number(c.conductor_id) === 1);
+  verificar('Monitoreo: la posición aparece EN_LINEA', !!filaGps && filaGps.estado === 'EN_LINEA' && Math.abs(filaGps.lat - 12.13) < 1e-6, filaGps);
+  verificar('Monitoreo: reportar con clave inválida se rechaza', await esperaFallo('monitoreo:reportar', { clave: 'x', lat: 1, lng: 1 }));
+  verificar('Monitoreo: listar sin sesión se rechaza', await esperaFallo('monitoreo:listar', {}));
+  DATOS['monitoreo:listar'] = { token: TOKENS.admin };
+  DATOS['monitoreo:vincular'] = { token: TOKENS.admin, conductor_id: 1 };
+  DATOS['monitoreo:desvincular'] = { token: TOKENS.admin, conductor_id: 1 };
+  DATOS['monitoreo:historial'] = { token: TOKENS.admin, conductor_id: 1 };
+  DATOS['monitoreo:reportar'] = { clave: disp.clave, lat: 12.14, lng: -86.26 };
+  DATOS['monitoreo:osmand'] = { id: disp.clave, lat: '12.15', lon: '-86.27', speed: '5' };
   // "usuarios:cerrar_sesion" se recorre antes que (c) y (e), y cerrarlo anularía
   // el token que usan: por eso se abre una sesión aparte solo para cerrar.
   const sesionParaCerrar = await ejecutarCanal('usuarios:autenticar', { usuario: 'borrable', clave: 'claveoriginal1' });

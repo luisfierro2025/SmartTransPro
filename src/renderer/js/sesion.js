@@ -408,7 +408,7 @@ function iniciarControlSesion() {
       const u = usuarioActual();
       const acepta = await confirmarAccion({
         titulo: '¿Cerrar sesión?',
-        mensaje: `Va a salir de <b>${u ? u.nombre : 'la sesión actual'}</b>. ` +
+        mensaje: `Va a salir de <b>${u ? textoSeguro(u.nombre) : 'la sesión actual'}</b>. ` +
           'Si hay información sin guardar, se perderá. Necesitará escribir su usuario y contraseña para volver a entrar.',
         botonOk: 'Cerrar sesión',
         botonCancelar: 'Seguir dentro'

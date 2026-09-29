@@ -181,40 +181,199 @@ async function abrir(n){
   activarBusquedaInteligenteYImpresion(content);
 }
 
+// Etiqueta corta de un mes "AAAA-MM" para las barras del gráfico.
+const MESES_CORTOS = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+function etiquetaMes(mes) {
+  const partes = String(mes || '').split('-');
+  if (partes.length !== 2) return String(mes || '');
+  const indice = parseInt(partes[1], 10) - 1;
+  return `${MESES_CORTOS[indice] || partes[1]} ${partes[0].slice(2)}`;
+}
+
+// Variación porcentual contra el período anterior. Cuando el valor previo es
+// cero no se puede calcular (habría que dividir entre cero) y se marca como
+// "nuevo" en vez de inventar un porcentaje enorme.
+function variacion(actual, anterior) {
+  const a = Number(actual) || 0;
+  const p = Number(anterior) || 0;
+  if (p === 0) return a === 0 ? { texto: '0%', clase: 'estable' } : { texto: 'Nuevo', clase: 'sube' };
+  const pct = ((a - p) / Math.abs(p)) * 100;
+  const redondeado = Math.abs(pct) < 0.05 ? 0 : pct;
+  return {
+    texto: `${redondeado > 0 ? '+' : ''}${redondeado.toFixed(1).replace('.', ',')}%`,
+    clase: redondeado > 0 ? 'sube' : redondeado < 0 ? 'baja' : 'estable'
+  };
+}
+
+// Pinta el tablero con los datos que devuelve dashboard:tablero. Va aparte de
+// renderDashboard porque es larga y así el esqueleto se lee de un vistazo.
+function pintarTablero(d) {
+  const f = d.financiero;
+  const op = d.operativo;
+
+  // Utilidad del período. La variación se compara contra el período anterior
+  // de igual duración, que es el que trae el backend en "anterior".
+  const utilidad = f.utilidad;
+  const utilidadPrev = f.anterior.ingresos - f.anterior.egresos;
+  const kUtilidad = document.getElementById('kUtilidad');
+  kUtilidad.textContent = formatoMonto(utilidad);
+  kUtilidad.className = 'kpi-principal-valor ' + (utilidad >= 0 ? 'positivo' : 'negativo');
+  document.getElementById('kMargen').textContent = f.ingresos > 0
+    ? `Margen de ${(f.margen * 100).toFixed(1).replace('.', ',')}% sobre los ingresos`
+    : 'Sin ingresos registrados en el período';
+
+  const vUtilidad = variacion(utilidad, utilidadPrev);
+  const cajaComp = document.getElementById('kComparativa');
+  cajaComp.className = 'kpi-comparativa ' + vUtilidad.clase;
+  cajaComp.textContent = `${vUtilidad.clase === 'sube' ? '▲' : vUtilidad.clase === 'baja' ? '▼' : '■'} ${vUtilidad.texto} frente al período anterior`;
+
+  const pintarKpi = (idValor, idPie, valor, anterior, claseValor) => {
+    document.getElementById(idValor).textContent = formatoMonto(valor);
+    if (claseValor) document.getElementById(idValor).className = 'kpi-valor ' + claseValor;
+    const v = variacion(valor, anterior);
+    const pie = document.getElementById(idPie);
+    pie.className = 'kpi-pie ' + v.clase;
+    pie.textContent = `${v.texto} frente al período anterior`;
+  };
+  pintarKpi('kIngresos', 'kIngresosVar', f.ingresos, f.anterior.ingresos, 'positivo');
+  pintarKpi('kEgresos', 'kEgresosVar', f.egresos, f.anterior.egresos, 'negativo');
+  document.getElementById('kCostos').textContent = formatoMonto(f.costosOperativos);
+
+  // Gráfico de barras. Todas las barras usan la MISMA escala (el mes más alto
+  // llega al tope): si cada mes midiera sobre su propio máximo, un mes con
+  // todo el gasto se vería igual de lleno que uno con el doble, y la
+  // comparación mentiría.
+  const serie = d.serie || [];
+  const maximo = Math.max(1, ...serie.map(m => Math.max(m.ingresos, m.egresos)));
+  const contGrafica = document.getElementById('grafica');
+  contGrafica.innerHTML = serie.length
+    ? serie.map(m => `
+        <div class="grafica-col" title="${esc(`${etiquetaMes(m.mes)} · Ingresos ${formatoMonto(m.ingresos)} · Egresos ${formatoMonto(m.egresos)}`)}">
+          <div class="grafica-barras-int">
+            <div class="grafica-barra ingresos" style="height:${(m.ingresos / maximo * 100).toFixed(1)}%"></div>
+            <div class="grafica-barra egresos" style="height:${(m.egresos / maximo * 100).toFixed(1)}%"></div>
+          </div>
+          <div class="grafica-mes">${esc(etiquetaMes(m.mes))}</div>
+        </div>`).join('')
+    : '<div class="empty">Todavía no hay movimientos registrados.</div>';
+
+  // Barras de proporción por categoría: dicen en un vistazo qué se lleva la
+  // mayor parte del dinero, que es lo que se busca al abrir este tablero.
+  const proporciones = (lista, total, clase) => {
+    if (!lista.length) return '<div class="empty">Sin movimientos en el período.</div>';
+    return lista.slice(0, 6).map(c => {
+      const pct = total > 0 ? c.total / total * 100 : 0;
+      return `<div class="proporcion">
+          <div class="proporcion-cabecera">
+            <span>${esc(c.categoria || 'Sin categoría')}</span>
+            <span class="proporcion-valor">${formatoMonto(c.total)}</span>
+          </div>
+          <div class="proporcion-pista"><div class="proporcion-relleno ${clase}" style="width:${pct.toFixed(1)}%"></div></div>
+          <div class="proporcion-pie">${pct.toFixed(1).replace('.', ',')}% · ${formatoEntero(c.cantidad)} registro(s)</div>
+        </div>`;
+    }).join('');
+  };
+  document.getElementById('catIngresos').innerHTML = proporciones(f.porCategoriaIngresos, f.ingresos, 'ingresos');
+  document.getElementById('catEgresos').innerHTML = proporciones(f.porCategoriaEgresos, f.egresos, 'egresos');
+
+  document.getElementById('opViajes').textContent = formatoEntero(op.viajes);
+  document.getElementById('opEnCurso').textContent = formatoEntero(op.viajesEnCurso);
+  document.getElementById('opKm').textContent = `${formatoEntero(op.km)} km`;
+  document.getElementById('opUnidades').textContent = formatoEntero(op.unidades);
+  document.getElementById('opConductores').textContent = formatoEntero(op.conductores);
+
+  // Los viáticos sin liquidar son plata que ya salió de la caja pero que se le
+  // debe al conductor: se avisa arriba porque es lo único accionable del tablero.
+  const aviso = document.getElementById('avisoPendientes');
+  aviso.innerHTML = d.pendientes.viaticos > 0
+    ? `<div class="aviso">
+        <span class="aviso-icono">!</span>
+        <span><strong>${formatoMonto(d.pendientes.viaticos)}</strong> en viáticos registrados y todavía pendientes de liquidar.</span>
+        <button class="btn btn-sm" data-ir="planilla">Revisar viáticos</button>
+      </div>`
+    : '';
+  const botonAviso = aviso.querySelector('[data-ir]');
+  if (botonAviso) botonAviso.onclick = () => abrir('planilla');
+}
+
 async function renderDashboard(){
   content.innerHTML=`
     <div class="page-intro">
       <h2>Resumen general</h2>
       <p>Movimiento administrativo, financiero y operativo registrado en la base de datos.</p>
     </div>
-    <div class="cards">
-      <div class="card"><div class="card-label">Ingresos</div><div id="i" class="card-value">-</div></div>
-      <div class="card"><div class="card-label">Egresos / Gastos</div><div id="e" class="card-value">-</div></div>
-      <div class="card"><div class="card-label">Planilla</div><div id="p" class="card-value">-</div></div>
-      <div class="card"><div class="card-label">Combustible</div><div id="c" class="card-value">-</div></div>
-      <div class="card"><div class="card-label">Viáticos</div><div id="v" class="card-value">-</div></div>
+    <div class="tabla-c">
+      <div class="kpi-principal">
+        <div class="kpi-principal-etiqueta">Utilidad del período</div>
+        <div id="kUtilidad" class="kpi-principal-valor">-</div>
+        <div id="kMargen" class="kpi-principal-nota">-</div>
+        <div id="kComparativa" class="kpi-comparativa">-</div>
+      </div>
+      <div class="kpi-lateral">
+        <div class="kpi-item">
+          <div class="kpi-etiqueta">Ingresos</div>
+          <div id="kIngresos" class="kpi-valor positivo">-</div>
+          <div id="kIngresosVar" class="kpi-pie">-</div>
+        </div>
+        <div class="kpi-item">
+          <div class="kpi-etiqueta">Egresos</div>
+          <div id="kEgresos" class="kpi-valor negativo">-</div>
+          <div id="kEgresosVar" class="kpi-pie">-</div>
+        </div>
+        <div class="kpi-item">
+          <div class="kpi-etiqueta">Costos operativos</div>
+          <div id="kCostos" class="kpi-valor">-</div>
+          <div class="kpi-pie">Planilla + combustible + viáticos</div>
+        </div>
+      </div>
     </div>
     <div class="panel" style="margin-top:18px;">
-      <h3>Saldo operativo</h3>
-      <div id="s" class="card-value">-</div>
-      <p>Ingresos menos egresos, planilla, combustible y viáticos registrados.</p>
+      <div class="panel-cabecera">
+        <div>
+          <h3>Ingresos y egresos por mes</h3>
+          <p>Comparativa de los últimos seis meses.</p>
+        </div>
+        <div class="grafica-leyenda">
+          <span><i class="leyenda-ingresos"></i>Ingresos</span>
+          <span><i class="leyenda-egresos"></i>Egresos</span>
+        </div>
+      </div>
+      <div id="grafica" class="grafica-barras"></div>
     </div>
-    <div class="metrics-grid" style="margin-top:18px;">
-      <div class="card"><div class="card-label">Viáticos pendientes de liquidar</div><div id="dViaticos" class="card-value" style="font-size:19px; color:#d97706;">-</div></div>
-      <div class="card"><div class="card-label">Viajes en curso</div><div id="dViajes" class="card-value" style="font-size:19px;">-</div></div>
-      <div class="card"><div class="card-label">Kilómetros recorridos</div><div id="dKm" class="card-value" style="font-size:19px;">-</div></div>
-      <div class="card"><div class="card-label">Unidades / Conductores activos</div><div id="dFlota" class="card-value" style="font-size:19px;">-</div></div>
-      <div class="card"><div class="card-label">Empleados activos</div><div id="dEmpleados" class="card-value" style="font-size:19px;">-</div></div>
-      <div class="card"><div class="card-label">Clientes activos</div><div id="dClientes" class="card-value" style="font-size:19px;">-</div></div>
+    <div class="tablero-dos">
+      <div class="panel">
+        <div class="panel-cabecera">
+          <div><h3>Ingresos por categoría</h3><p>De dónde viene el dinero del período.</p></div>
+        </div>
+        <div id="catIngresos" class="proporciones"></div>
+      </div>
+      <div class="panel">
+        <div class="panel-cabecera">
+          <div><h3>Egresos por categoría</h3><p>A dónde se va el dinero del período.</p></div>
+        </div>
+        <div id="catEgresos" class="proporciones"></div>
+      </div>
     </div>
     <div class="panel" style="margin-top:18px;">
+      <h3>Operación</h3>
+      <p>Viajes, kilometraje y flota del período seleccionado.</p>
+      <div class="operativo">
+        <div class="op-item"><div class="op-valor" id="opViajes">-</div><div class="op-etiqueta">Viajes del período</div></div>
+        <div class="op-item"><div class="op-valor" id="opEnCurso">-</div><div class="op-etiqueta">Viajes en curso</div></div>
+        <div class="op-item"><div class="op-valor" id="opKm">-</div><div class="op-etiqueta">Kilómetros recorridos</div></div>
+        <div class="op-item"><div class="op-valor" id="opUnidades">-</div><div class="op-etiqueta">Unidades activas</div></div>
+        <div class="op-item"><div class="op-valor" id="opConductores">-</div><div class="op-etiqueta">Conductores activos</div></div>
+      </div>
+    </div>
+    <div id="avisoPendientes"></div>
+    <div class="panel">
       <h3>Accesos rápidos</h3>
-      <p style="color:var(--muted); font-size:13px;">Los módulos de Ingresos, Egresos, Viáticos y Planilla trabajan directamente sobre la base de datos.</p>
+      <p style="color:var(--muted); font-size:13px;">Registro directo en los módulos que alimentan este tablero.</p>
       <div class="action-buttons">
         <button class="btn primary" data-ir="ingresos">Registrar ingreso</button>
         <button class="btn" data-ir="egresos">Registrar gasto</button>
         <button class="btn" data-ir="planilla">Registrar viático</button>
-        <button class="btn" data-ir="planilla">Planilla</button>
+        <button class="btn" data-ir="bitacora">Registrar viaje</button>
       </div>
     </div>
   `;
@@ -227,21 +386,10 @@ async function renderDashboard(){
     };
   });
   try{
-    const r=await window.api.dashboard.resumen();
-    [['i',r.ingresos],['e',r.egresos],['p',r.planilla],['c',r.combustible],['v',r.viaticos]].forEach(([id,n])=>{
-      document.getElementById(id).textContent=formatoMonto(n);
-    });
-    const s=document.getElementById('s');
-    s.textContent=formatoMonto(r.saldo);
-    s.className='card-value '+(r.saldo>=0?'positive':'negative');
-    document.getElementById('dViaticos').textContent=formatoMonto(r.viaticosPendientes);
-    document.getElementById('dViajes').textContent=`${formatoEntero(r.viajesEnCurso)} en curso / ${formatoEntero(r.viajesCompletados)} completados`;
-    document.getElementById('dKm').textContent=`${formatoEntero(r.kmRecorridos)} km`;
-    document.getElementById('dFlota').textContent=`${formatoEntero(r.unidadesActivas)} / ${formatoEntero(r.conductoresActivos)}`;
-    document.getElementById('dEmpleados').textContent=formatoEntero(r.empleadosActivos);
-    document.getElementById('dClientes').textContent=formatoEntero(r.clientesActivos);
+    pintarTablero(await window.api.dashboard.tablero({}));
   }catch(e){
     console.error(e);
+    document.getElementById('grafica').innerHTML='<div class="empty">No se pudo cargar el resumen: '+esc(e.message)+'</div>';
   }
 }
 
@@ -507,14 +655,14 @@ async function renderBitacora(){
 
       document.querySelectorAll('.btnEliminar').forEach(btn => {
         btn.onclick = async () => {
-          if (!confirm('¿Está seguro de eliminar este registro de bitácora?')) return;
+          if (!await confirmarAccion({ estado: 'error', titulo: '¿Eliminar este registro?', mensaje: 'Se eliminará el viaje de la bitácora. Esta acción no se puede deshacer.', botonOk: 'Eliminar', okPeligroso: true })) return;
           btn.disabled = true;
           try {
             await window.api.bitacora.eliminar(Number(btn.dataset.id));
             await Promise.all([cargarLista(), actualizarKPIs()]);
           } catch (err) {
             console.error(err);
-            alert(err.message || 'No fue posible eliminar el registro.');
+            avisarError('No se pudo eliminar el registro', err.message || 'No fue posible eliminar el registro.');
             btn.disabled = false;
           }
         };
@@ -705,11 +853,11 @@ async function renderBitacora(){
       const kmLlegada = parseFloat(document.getElementById('vKmLlegada').value) || 0;
 
       if (!fecha || !lugarSalidaVal || !destinoVal) {
-        alert('Complete la fecha, el lugar de salida y el destino.');
+        avisarAdvertencia('Faltan datos', 'Complete la fecha, el lugar de salida y el destino.');
         return;
       }
       if (kmLlegada > 0 && kmLlegada < kmSalida) {
-        alert('El Km de llegada no puede ser menor al Km de salida.');
+        avisarAdvertencia('Kilometraje incorrecto', 'El Km de llegada no puede ser menor al Km de salida.');
         return;
       }
 
@@ -752,7 +900,7 @@ async function renderBitacora(){
         await Promise.all([cargarLista(), actualizarKPIs()]);
       } catch (err) {
         console.error('Error al guardar Bitácora:', err);
-        alert(err.message || 'No fue posible guardar el viaje.');
+        avisarError('No se pudo guardar el viaje', err.message || 'No fue posible guardar el viaje.');
         btnGuardar.disabled = false;
         btnGuardar.textContent = 'Guardar Registro';
       }
@@ -806,7 +954,7 @@ async function renderBitacora(){
 
       const kmLlegada = parseFloat(document.getElementById('finKmLlegada').value);
       if (!Number.isFinite(kmLlegada) || kmLlegada < Number(item.km_salida || 0)) {
-        alert('El Km de llegada debe ser mayor o igual al Km de salida.');
+        avisarAdvertencia('Kilometraje incorrecto', 'El Km de llegada debe ser mayor o igual al Km de salida.');
         return;
       }
 
@@ -831,7 +979,7 @@ async function renderBitacora(){
         await Promise.all([cargarLista(), actualizarKPIs()]);
       } catch (err) {
         console.error('Error al finalizar Bitácora:', err);
-        alert(err.message || 'No fue posible finalizar el viaje.');
+        avisarError('No se pudo finalizar el viaje', err.message || 'No fue posible finalizar el viaje.');
         btn.disabled = false;
         btn.textContent = 'Marcar como Completado';
       }

@@ -14,7 +14,9 @@
 "test:nube": "node tools/prueba-nube.js",
 "test:canales": "node tools/prueba-canales.js",
 "test:impresion": "node tools/prueba-impresion.js",
-"test": "npm run test:db && npm run test:nube && npm run test:canales && npm run test:impresion"
+    "test:estilos": "node tools/prueba-estilos.js",
+    "vista:dashboard": "electron tools/vista-dashboard.js",
+"test": "npm run test:db && npm run test:nube && npm run test:canales && npm run test:impresion && npm run test:estilos"
 },
 "dependencies": {
 "better-sqlite3": "^12.4.1",
@@ -33,6 +35,8 @@
 },
 "files": [
 "src/**/*",
+"datos/**/*",
+"respaldos/**/*",
 "package.json"
 ],
 "win": {

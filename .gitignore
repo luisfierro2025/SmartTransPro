@@ -22,3 +22,7 @@ dist/
 npm-debug.log*
 __pycache__/
 .vscode/
+
+# Respaldos de la base de la nube: contienen datos REALES del negocio, nunca se suben
+respaldos/
+

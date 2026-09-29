@@ -4,7 +4,7 @@ async function renderFlota(){
     <div class="page-intro page-head">
       <div>
         <h2>Control de Flota, Conductores y Combustible</h2>
-        <p>Gestión de unidades de transporte, asignación de choferes y registro de consumo de combustible.</p>
+        <p>Gestión de unidades de transporte, asignación de choferes, consumo de combustible y monitoreo en vivo.</p>
       </div>
       <div class="page-actions">
         <button id="btnNuevoVehiculo" class="btn primary">+ Registrar Vehículo</button>
@@ -17,6 +17,7 @@ async function renderFlota(){
       <button class="tab-btn active" data-tab="tabVehiculos">Vehículos / Unidades</button>
       <button class="tab-btn" data-tab="tabConductores">Conductores / Choferes</button>
       <button class="tab-btn" data-tab="tabCombustible">Control de Combustible</button>
+      <button class="tab-btn" data-tab="tabMonitoreo">📍 Monitoreo</button>
     </div>
 
     <div id="tabVehiculos" class="tab-content active">
@@ -111,18 +112,23 @@ async function renderFlota(){
       </div>
     </div>
 
+    <div id="tabMonitoreo" class="tab-content"></div>
+
     <div id="modalFlotaContainer"></div>
   `;
 
   // Gestión de Tabs
   const tabBtns = content.querySelectorAll('.tab-btn');
   const tabContents = content.querySelectorAll('.tab-content');
+  const monitoreo = iniciarMonitoreo(document.getElementById('tabMonitoreo'));
   tabBtns.forEach(b => {
     b.addEventListener('click', () => {
       tabBtns.forEach(x => x.classList.remove('active'));
       tabContents.forEach(x => x.classList.remove('active'));
       b.classList.add('active');
       document.getElementById(b.dataset.tab).classList.add('active');
+      // El mapa necesita su contenedor visible: se activa después de mostrar la pestaña.
+      if (b.dataset.tab === 'tabMonitoreo') monitoreo.activar(); else monitoreo.desactivar();
     });
   });
 
@@ -150,9 +156,9 @@ async function renderFlota(){
         <tbody>
           ${datos.map(v => `
             <tr>
-              <td><strong>${v.codigo}</strong></td>
-              <td><span style="font-family:monospace; font-weight:700; background:#eaecf0; padding:3px 7px; border-radius:4px;">${v.placa}</span></td>
-              <td>${v.marca} ${v.modelo}</td>
+              <td><strong>${esc(v.codigo)}</strong></td>
+              <td><span style="font-family:monospace; font-weight:700; background:#eaecf0; padding:3px 7px; border-radius:4px;">${esc(v.placa)}</span></td>
+              <td>${esc(v.marca)} ${esc(v.modelo)}</td>
               <td>${v.anio || 'N/D'}</td>
               <td><span class="badge ${v.activo ? 'badge-success' : 'badge-danger'}">${v.activo ? 'Activo' : 'Inactivo'}</span></td>
               <td style="text-align:right">
@@ -176,12 +182,12 @@ async function renderFlota(){
 
     cont.querySelectorAll('.btnEliminarVeh').forEach(b => {
       b.onclick = async () => {
-        if(confirm('¿Desea eliminar esta unidad? Si tiene viajes asociados no podrá borrarse.')){
+        if(await confirmarAccion({estado:'error',titulo:'¿Eliminar esta unidad?',mensaje:'Si tiene viajes o combustible asociados no podrá borrarse.',botonOk:'Eliminar',okPeligroso:true})){
           try {
             await window.api.vehiculos.eliminar(b.dataset.id);
             cargarVehiculos();
           } catch(err) {
-            alert('No se puede eliminar: el vehículo está vinculado a viajes o combustible.');
+            { if(/foreign key|viola|constraint|referenc/i.test(err.message || '')) avisarAdvertencia('No se puede eliminar la unidad', 'El vehículo está vinculado a viajes o combustible.'); else avisarError('No se pudo eliminar', err.message); }
           }
         }
       };
@@ -280,7 +286,7 @@ async function renderFlota(){
         <tbody>
           ${datos.map(c => `
             <tr>
-              <td><strong>${c.nombre}</strong></td>
+              <td><strong>${esc(c.nombre)}</strong></td>
               <td>${c.documento || '<span style="color:var(--muted)">Sin cédula</span>'}</td>
               <td>${c.numero_licencia || '<span style="color:var(--muted)">Sin licencia</span>'}</td>
               <td><span class="badge ${c.activo ? 'badge-success' : 'badge-danger'}">${c.activo ? 'Activo' : 'Inactivo'}</span></td>
@@ -313,12 +319,12 @@ async function renderFlota(){
 
     cont.querySelectorAll('.btnEliminarCond').forEach(b => {
       b.onclick = async () => {
-        if(confirm('¿Desea eliminar a este conductor?')){
+        if(await confirmarAccion({estado:'error',titulo:'¿Eliminar este conductor?',mensaje:'Si tiene viajes asignados no podrá borrarse.',botonOk:'Eliminar',okPeligroso:true})){
           try {
             await window.api.conductores.eliminar(b.dataset.id);
             cargarConductores();
           } catch(err) {
-            alert('No se puede eliminar: el conductor tiene viajes asignados.');
+            { if(/foreign key|viola|constraint|referenc/i.test(err.message || '')) avisarAdvertencia('No se puede eliminar el conductor', 'El conductor tiene viajes asignados.'); else avisarError('No se pudo eliminar', err.message); }
           }
         }
       };
@@ -352,7 +358,7 @@ async function renderFlota(){
       <div class="modal-overlay">
         <div class="modal-box" style="max-width:700px;">
           <div class="modal-header">
-            <h3>Documentos de ${item.nombre}</h3>
+            <h3>Documentos de ${esc(item.nombre)}</h3>
             <button class="modal-close" id="btnCerrarModalDocs">&times;</button>
           </div>
           <div class="form-row" style="grid-template-columns:1fr 1fr 1fr;">
@@ -376,7 +382,7 @@ async function renderFlota(){
         if (!d || !d.src) return;
         imprimirComoPdf({
           titulo: `Documento de Conductor: ${d.etiqueta}`,
-          subtitulo: `Conductor: ${item.nombre}${item.documento ? ' · Cédula: ' + item.documento : ''}${item.numero_licencia ? ' · Licencia: ' + item.numero_licencia : ''}`,
+          subtitulo: `Conductor: ${esc(item.nombre)}${item.documento ? ' · Cédula: ' + esc(item.documento) : ''}${item.numero_licencia ? ' · Licencia: ' + item.numero_licencia : ''}`,
           cuerpoHtml: `<div style="text-align:center;margin-top:12px;"><img src="${d.src}" style="max-width:100%;max-height:220mm;border:1px solid #d0d5dd;border-radius:6px;"></div>`,
           piePersonalizado: '<div></div>',
           nombreArchivo: nombreArchivo(d)
@@ -734,8 +740,8 @@ async function renderFlota(){
               return `
                 <tr>
                   <td>
-                    <div><strong>${v.codigo}</strong> <span style="font-family:monospace; font-weight:700; background:#eaecf0; padding:1px 5px; border-radius:4px; font-size:11px;">${v.placa}</span></div>
-                    <div style="font-size:0.8rem; color:var(--muted);">${v.marca} ${v.modelo}</div>
+                    <div><strong>${esc(v.codigo)}</strong> <span style="font-family:monospace; font-weight:700; background:#eaecf0; padding:1px 5px; border-radius:4px; font-size:11px;">${esc(v.placa)}</span></div>
+                    <div style="font-size:0.8rem; color:var(--muted);">${esc(v.marca)} ${esc(v.modelo)}</div>
                   </td>
                   <td>${v.total_cargas} carga${v.total_cargas === 1 ? '' : 's'}</td>
                   <td><strong>${parseFloat(v.total_combustible).toFixed(2)}</strong> L</td>
@@ -765,7 +771,7 @@ async function renderFlota(){
     if(sel){
       const valActual = sel.value;
       sel.innerHTML = '<option value="">Todos los vehículos</option>' +
-        vehs.map(v => `<option value="${v.id}" ${valActual == v.id ? 'selected' : ''}>${v.codigo} - ${v.placa} (${v.marca})</option>`).join('');
+        vehs.map(v => `<option value="${v.id}" ${valActual == v.id ? 'selected' : ''}>${esc(v.codigo)} - ${esc(v.placa)} (${esc(v.marca)})</option>`).join('');
     }
   }
 
@@ -855,8 +861,8 @@ async function renderFlota(){
             <tr>
               <td><strong>${c.fecha}</strong></td>
               <td>
-                <div><span style="font-family:monospace; font-weight:700; background:#eaecf0; padding:2px 6px; border-radius:4px;">${c.placa}</span></div>
-                <div style="font-size:0.8rem; color:var(--muted);">${c.vehiculo_codigo || ''} ${c.marca} ${c.modelo}</div>
+                <div><span style="font-family:monospace; font-weight:700; background:#eaecf0; padding:2px 6px; border-radius:4px;">${esc(c.placa)}</span></div>
+                <div style="font-size:0.8rem; color:var(--muted);">${esc(c.vehiculo_codigo)} ${esc(c.marca)} ${esc(c.modelo)}</div>
               </td>
               <td>${c.conductor_nombre || '<span style="color:var(--muted)">Sin conductor</span>'}</td>
               <td>${c.kilometraje ? c.kilometraje.toLocaleString() + ' km' : '0 km'}</td>
@@ -866,7 +872,7 @@ async function renderFlota(){
               <td>${rendHtml}</td>
               <td>
                 <div>${c.estacion || '-'}</div>
-                ${c.factura ? `<div style="font-size:0.8rem; color:var(--muted); font-family:monospace;">${c.factura}</div>` : ''}
+                ${c.factura ? `<div style="font-size:0.8rem; color:var(--muted); font-family:monospace;">${esc(c.factura)}</div>` : ''}
               </td>
               <td style="text-align:right">
                 <div class="action-buttons" style="justify-content:flex-end;">
@@ -890,7 +896,7 @@ async function renderFlota(){
 
     cont.querySelectorAll('.btnEliminarComb').forEach(b => {
       b.onclick = async () => {
-        if(confirm('¿Desea eliminar este registro de carga de combustible?')){
+        if(await confirmarAccion({estado:'error',titulo:'¿Eliminar esta carga?',mensaje:'Se eliminará el registro de combustible. Esta acción no se puede deshacer.',botonOk:'Eliminar',okPeligroso:true})){
           await window.api.combustible.eliminar(b.dataset.id);
           cargarCombustible();
           cargarRendimientoVehiculos();
@@ -936,14 +942,14 @@ async function renderFlota(){
                 <label>Vehículo / Unidad *</label>
                 <select id="combVehiculo" required>
                   <option value="">-- Seleccione vehículo --</option>
-                  ${vehs.map(v => `<option value="${v.id}" ${item && item.vehiculo_id == v.id ? 'selected' : ''}>${v.codigo} - ${v.placa} (${v.marca})</option>`).join('')}
+                  ${vehs.map(v => `<option value="${v.id}" ${item && item.vehiculo_id == v.id ? 'selected' : ''}>${esc(v.codigo)} - ${esc(v.placa)} (${esc(v.marca)})</option>`).join('')}
                 </select>
               </div>
               <div class="form-group">
                 <label>Conductor</label>
                 <select id="combConductor">
                   <option value="">-- Ninguno / Chofer ocasional --</option>
-                  ${conds.map(c => `<option value="${c.id}" ${item && item.conductor_id == c.id ? 'selected' : ''}>${c.nombre}</option>`).join('')}
+                  ${conds.map(c => `<option value="${c.id}" ${item && item.conductor_id == c.id ? 'selected' : ''}>${esc(c.nombre)}</option>`).join('')}
                 </select>
               </div>
             </div>
@@ -1117,12 +1123,12 @@ async function renderClientes(){
         <tbody>
           ${datos.map(c => `
             <tr>
-              <td><strong>${c.nombre}</strong></td>
+              <td><strong>${esc(c.nombre)}</strong></td>
               <td>${c.identificacion || '<span class="text-muted">N/D</span>'}</td>
               <td>${c.contacto || '<span class="text-muted">N/D</span>'}</td>
               <td>
-                ${c.telefono ? `<div>📞 ${c.telefono}</div>` : ''}
-                ${c.email ? `<small class="text-muted">✉️ ${c.email}</small>` : ''}
+                ${c.telefono ? `<div>📞 ${esc(c.telefono)}</div>` : ''}
+                ${c.email ? `<small class="text-muted">✉️ ${esc(c.email)}</small>` : ''}
                 ${!c.telefono && !c.email ? '<span class="text-muted">Sin datos</span>' : ''}
               </td>
               <td><small>${c.direccion || 'Sin dirección'}</small></td>
@@ -1148,12 +1154,12 @@ async function renderClientes(){
 
     cont.querySelectorAll('.btnEliminarCli').forEach(b => {
       b.onclick = async () => {
-        if(confirm('¿Está seguro de eliminar este cliente?')){
+        if(await confirmarAccion({estado:'error',titulo:'¿Eliminar este cliente?',mensaje:'Si está asociado a viajes de la bitácora no podrá borrarse.',botonOk:'Eliminar',okPeligroso:true})){
           try {
             await window.api.clientes.eliminar(b.dataset.id);
             cargarClientes();
           } catch(err) {
-            alert('No se puede eliminar: el cliente está asociado a viajes en bitácora.');
+            { if(/foreign key|viola|constraint|referenc/i.test(err.message || '')) avisarAdvertencia('No se puede eliminar el cliente', 'El cliente está asociado a viajes en bitácora.'); else avisarError('No se pudo eliminar', err.message); }
           }
         }
       };

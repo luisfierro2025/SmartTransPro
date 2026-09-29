@@ -1,6 +1,6 @@
-# Control Empresa
+# SmartTransPro
 
-Aplicación de escritorio instalable para Windows.
+Aplicación de escritorio instalable para Windows para la gestión y control de operaciones de transporte.
 
 Tecnologías: Electron, Node.js, SQLite, HTML/CSS/JavaScript.
 
@@ -124,3 +124,21 @@ npm run test:ui   # recorre la interfaz real y verifica que los pagos se guarden
 las comisiones (la ficha individual de la tabla y la liquidación por conductor),
 comprobando después contra la base que efectivamente quedaron pagadas.
 
+
+## Monitoreo de la flota por GPS (pestaña Flota > Monitoreo)
+
+Usa el GPS de los teléfonos de los conductores: no requiere comprar equipos.
+
+1. En **Flota > Monitoreo**, toca **Vincular teléfono** en la fila del conductor.
+2. Escribe la dirección pública del sistema (con `https://`) y envía el enlace por WhatsApp, QR o copiándolo.
+3. El conductor abre el enlace, permite la ubicación y toca **Iniciar viaje** (`src/renderer/rastreo.html`, no instala nada).
+4. El punto aparece en el mapa y se actualiza cada 15 s. **Ruta** dibuja las últimas 12 horas.
+
+Requisitos y límites:
+
+- Los teléfonos deben poder llegar al servidor: sirve la versión web publicada con **HTTPS** (el teléfono no comparte la ubicación en `http://`, salvo `localhost`). La app de escritorio con SQLite local no es alcanzable desde los teléfonos.
+- Con la página web, el navegador solo envía con la pantalla encendida y la página abierta (se pide mantener la pantalla activa). Sin señal guarda los puntos y los envía al volver.
+- Alternativa gratuita para segundo plano real: la app **Traccar Client** apuntando a `https://TU-SISTEMA/api/monitoreo/osmand`, con la clave del enlace como identificador del dispositivo.
+- El mapa usa Leaflet y OpenStreetMap (cdnjs); sin internet la lista sigue funcionando.
+- En la nube se crean las tablas `dispositivos_gps` y `posiciones_gps` al arrancar (o con `npm run db:migraciones`, migración `0007`). El historial se depura solo a los 14 días.
+- La clave del teléfono nunca se guarda en claro (solo su hash SHA-256) y se muestra una única vez al generar el enlace.

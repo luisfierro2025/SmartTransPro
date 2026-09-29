@@ -123,7 +123,8 @@ const CATALOGOS = ['clientes', 'vehiculos', 'conductores', 'empleados'];
 async function limpiarDatos(alcance) {
   const db = obtenerDB();
   const esTotal = alcance === 'total';
-  const tablas = esTotal ? OPERATIVAS.concat(CATALOGOS) : OPERATIVAS.slice();
+  // El historial GPS es operativo; los teléfonos vinculados solo se borran en la limpieza total.
+  const tablas = (esTotal ? OPERATIVAS.concat(['posiciones_gps', 'dispositivos_gps'], CATALOGOS) : OPERATIVAS.concat(['posiciones_gps'])).slice();
   const borrados = {};
   for (const tabla of tablas) {
     await db.prepare(`DELETE FROM ${tabla}`).run();

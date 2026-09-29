@@ -181,12 +181,12 @@ async function renderMovimientoFinanciero(cfg) {
     });
     cont.querySelectorAll('.btnEliminarMov').forEach(b => {
       b.onclick = async () => {
-        if (!confirm(`¿Está seguro de eliminar este ${cfg.etiqueta.toLowerCase()}?`)) return;
+        if (!await confirmarAccion({ estado: 'error', titulo: `¿Eliminar este ${cfg.etiqueta.toLowerCase()}?`, mensaje: 'Esta acción no se puede deshacer.', botonOk: 'Eliminar', okPeligroso: true })) return;
         try {
           await cfg.api.eliminar(b.dataset.id);
           await Promise.all([cargarLista(), cargarResumen()]);
         } catch (err) {
-          alert('No se pudo eliminar el registro: ' + err.message);
+          avisarError('No se pudo eliminar el registro', err.message);
         }
       };
     });
@@ -288,7 +288,7 @@ async function renderMovimientoFinanciero(cfg) {
       payload.cliente_id = cfg.conCliente ? (document.getElementById('movCliente').value || null) : null;
       payload.beneficiario = cfg.conCliente ? null : document.getElementById('movBeneficiario').value.trim();
       if (!payload.concepto || payload.monto <= 0) {
-        alert('El concepto es obligatorio y el monto debe ser mayor que cero.');
+        avisarAdvertencia('Faltan datos', 'El concepto es obligatorio y el monto debe ser mayor que cero.');
         return;
       }
       try {
@@ -296,7 +296,7 @@ async function renderMovimientoFinanciero(cfg) {
         modal.innerHTML = '';
         await Promise.all([cargarLista(), cargarResumen()]);
       } catch (err) {
-        alert('No se pudo guardar el registro: ' + err.message);
+        avisarError('No se pudo guardar el registro', err.message);
       }
     };
   }
@@ -651,12 +651,12 @@ async function renderPlanilla() {
     });
     cont.querySelectorAll('.btnEliminarVia').forEach(b => {
       b.onclick = async () => {
-        if (!confirm('¿Está seguro de eliminar este viático?')) return;
+        if (!await confirmarAccion({ estado: 'error', titulo: '¿Eliminar este viático?', mensaje: 'Esta acción no se puede deshacer.', botonOk: 'Eliminar', okPeligroso: true })) return;
         try {
           await window.api.viaticos.eliminar(b.dataset.id);
           await Promise.all([cargarListaViaticos(), cargarResumenViaticos()]);
         } catch (err) {
-          alert('No se pudo eliminar el viático: ' + err.message);
+          avisarError('No se pudo eliminar el viático', err.message);
         }
       };
     });
@@ -675,10 +675,10 @@ async function renderPlanilla() {
       v = await window.api.bitacora.obtener(viajeId);
     } catch (err) {
       modal.innerHTML = '';
-      alert('No se pudo cargar la ficha del viaje: ' + err.message);
+      avisarError('No se pudo cargar la ficha del viaje', err.message);
       return;
     }
-    if (!v) { modal.innerHTML = ''; alert('El viaje ya no existe en Bitácora.'); return; }
+    if (!v) { modal.innerHTML = ''; avisarAdvertencia('El viaje ya no existe', 'Ese viaje fue eliminado de Bitácora.'); return; }
     const dato = (etiqueta, valor) => `<div class="form-group"><label>${etiqueta}</label><div>${esc(valor || '-')}</div></div>`;
     modal.innerHTML = `
       <div class="modal-overlay">
@@ -846,7 +846,8 @@ async function renderPlanilla() {
                   <button type="button" class="btn btn-sm btn-secondary" id="btnVerViajeForm" disabled>Ver ficha</button>
                 </div>
                 <small id="viatViajeAyuda" style="display:block; margin-top:6px; color:var(--muted);">
-                  Al seleccionar un viaje se cargarán automáticamente el destino y el viático registrado en Bitácora. Ambos datos seguirán siendo editables.
+                  Solo aparecen los viajes sin viático registrado: cada viaje se cobra una sola vez.
+                  Al seleccionar uno se cargarán automáticamente el destino y el viático de Bitácora. Ambos datos seguirán siendo editables.
                 </small>
               </div>
             </div>
@@ -959,17 +960,32 @@ async function renderPlanilla() {
       }
 
       try {
-        // La fecha se usa como referencia, pero no bloquea viajes del conductor:
-        // así se puede registrar un viático sobre un viaje anterior o pendiente.
-        viajesDisponibles = await window.api.bitacora.listar({ conductor_id: conductorId });
+        // Solo se ofrecen los viajes que NO tienen un viático: un viaje se cobra
+        // una sola vez. Al editar se manda el id del viático para que su propio
+        // viaje no se excluya y se pueda seguir modificando. La fecha se usa
+        // como referencia, pero no bloquea viajes anteriores o pendientes.
+        viajesDisponibles = await window.api.viaticos.viajes_disponibles({
+          conductor_id: conductorId,
+          viatico_id: item ? item.id : null
+        });
       } catch (err) {
         selectViaje.innerHTML = '<option value="">No se pudieron cargar los viajes</option>';
-        alert('No se pudieron cargar los viajes del conductor: ' + err.message);
+        avisarError('No se pudieron cargar los viajes del conductor', err.message);
         return;
       }
 
       if (!viajesDisponibles.length) {
-        selectViaje.innerHTML = '<option value="">Este conductor no tiene viajes en Bitácora</option>';
+        // Se distingue el motivo: si el conductor sí tiene viajes pero todos
+        // tienen viático, el mensaje debe decir eso y no "no tiene viajes".
+        let tieneViajes = false;
+        try {
+          tieneViajes = (await window.api.bitacora.listar({ conductor_id: conductorId })).length > 0;
+        } catch (err) {
+          console.error('No se pudo verificar los viajes del conductor:', err);
+        }
+        selectViaje.innerHTML = tieneViajes
+          ? '<option value="">Todos los viajes ya tienen un viático registrado</option>'
+          : '<option value="">Este conductor no tiene viajes en Bitácora</option>';
         return;
       }
 
@@ -1000,10 +1016,10 @@ async function renderPlanilla() {
         // especialmente viatico y destino.
         const v = await window.api.bitacora.obtener(id);
         mostrarViajeSeleccionado(v || null);
-        if (!v) alert('El viaje seleccionado ya no existe en Bitácora.');
+        if (!v) avisarAdvertencia('El viaje ya no existe', 'El viaje seleccionado fue eliminado de Bitácora.');
       } catch (err) {
         mostrarViajeSeleccionado(null);
-        alert('No se pudo consultar el viaje seleccionado: ' + err.message);
+        avisarError('No se pudo consultar el viaje seleccionado', err.message);
       }
     });
 
@@ -1031,7 +1047,7 @@ async function renderPlanilla() {
         observacion: document.getElementById('viatObservacion').value.trim()
       };
       if (!payload.fecha || !payload.conductor_id || !payload.destino || payload.monto <= 0) {
-        alert('Debe indicar la fecha, seleccionar un conductor, indicar el destino y un monto mayor que cero.');
+        avisarAdvertencia('Faltan datos', 'Indique la fecha, seleccione un conductor, escriba el destino y un monto mayor que cero.');
         return;
       }
       try {
@@ -1039,7 +1055,7 @@ async function renderPlanilla() {
         modal.innerHTML = '';
         await Promise.all([cargarListaViaticos(), cargarResumenViaticos()]);
       } catch (err) {
-        alert('No se pudo guardar el viático: ' + err.message);
+        avisarError('No se pudo guardar el viático', err.message);
       }
     };
   }
@@ -1186,12 +1202,12 @@ async function renderPlanilla() {
     });
     cont.querySelectorAll('.btnEliminarCom').forEach(b => {
       b.onclick = async () => {
-        if (!confirm('¿Está seguro de eliminar esta comisión?')) return;
+        if (!await confirmarAccion({ estado: 'error', titulo: '¿Eliminar esta comisión?', mensaje: 'Esta acción no se puede deshacer.', botonOk: 'Eliminar', okPeligroso: true })) return;
         try {
           await window.api.comisiones.eliminar(b.dataset.id);
           await recargarComisiones();
         } catch (err) {
-          alert('No se pudo eliminar la comisión: ' + err.message);
+          avisarError('No se pudo eliminar la comisión', err.message);
         }
       };
     });
@@ -1331,23 +1347,23 @@ async function renderPlanilla() {
     });
     cont.querySelectorAll('.btnPagarPla').forEach(b => {
       b.onclick = async () => {
-        if (!confirm('¿Marcar esta planilla como pagada?')) return;
+        if (!await confirmarAccion({ titulo: '¿Marcar como pagada?', mensaje: 'La planilla quedará registrada como pagada.', botonOk: 'Marcar como pagada' })) return;
         try {
           await window.api.planilla.pagar(b.dataset.id);
           await cargarPlanillas();
         } catch (err) {
-          alert('No se pudo actualizar la planilla: ' + err.message);
+          avisarError('No se pudo actualizar la planilla', err.message);
         }
       };
     });
     cont.querySelectorAll('.btnEliminarPla').forEach(b => {
       b.onclick = async () => {
-        if (!confirm('¿Está seguro de eliminar esta planilla y su detalle?')) return;
+        if (!await confirmarAccion({ estado: 'error', titulo: '¿Eliminar esta planilla?', mensaje: 'Se eliminará también todo su detalle. Esta acción no se puede deshacer.', botonOk: 'Eliminar', okPeligroso: true })) return;
         try {
           await window.api.planilla.eliminar(b.dataset.id);
           await cargarPlanillas();
         } catch (err) {
-          alert('No se pudo eliminar la planilla: ' + err.message);
+          avisarError('No se pudo eliminar la planilla', err.message);
         }
       };
     });
@@ -1504,11 +1520,11 @@ async function renderPlanilla() {
       const select = document.getElementById('plaAgregarEmpleado');
       const id = parseInt(select.value, 10);
       if (!id) {
-        alert('Seleccione un empleado para agregarlo al detalle.');
+        avisarAdvertencia('Falta el empleado', 'Seleccione un empleado para agregarlo al detalle.');
         return;
       }
       if (detalle.some(f => f.empleado_id === id)) {
-        alert('El empleado ya está incluido en el detalle.');
+        avisarAdvertencia('Empleado repetido', 'El empleado ya está incluido en el detalle.');
         return;
       }
       const empleado = todosEmpleados.find(e => e.id === id);
@@ -1527,11 +1543,11 @@ async function renderPlanilla() {
       e.preventDefault();
       const periodo = document.getElementById('plaPeriodo').value.trim();
       if (!periodo) {
-        alert('Indique el período de la planilla.');
+        avisarAdvertencia('Falta el período', 'Indique el período de la planilla.');
         return;
       }
       if (!detalle.length) {
-        alert('Agregue al menos un empleado al detalle.');
+        avisarAdvertencia('Detalle vacío', 'Agregue al menos un empleado al detalle.');
         return;
       }
       try {
@@ -1546,7 +1562,7 @@ async function renderPlanilla() {
         modal.innerHTML = '';
         await cargarPlanillas();
       } catch (err) {
-        alert('No se pudo guardar la planilla: ' + err.message);
+        avisarError('No se pudo guardar la planilla', err.message);
       }
     };
 
@@ -1614,9 +1630,9 @@ async function renderPlanilla() {
         });
         modal.innerHTML = '';
         await cargarPlanillas();
-        alert(`Planilla generada con ${res.empleados} empleado(s). Puede ajustar montos con el botón Editar.`);
+        avisarExito('Planilla generada', `Se incluyeron ${res.empleados} empleado(s). Puede ajustar los montos con el botón Editar.`);
       } catch (err) {
-        alert('No se pudo generar la planilla: ' + err.message);
+        avisarError('No se pudo generar la planilla', err.message);
       }
     };
   }
@@ -1896,11 +1912,11 @@ async function renderPlanilla() {
         observacion: document.getElementById('comObservacionForm').value.trim()
       };
       if (!payload.fecha || !payload.conductor_id) {
-        alert('Indique la fecha y seleccione el conductor de la comisión.');
+        avisarAdvertencia('Faltan datos', 'Indique la fecha y seleccione el conductor de la comisión.');
         return;
       }
       if (payload.valor_calculo <= 0 || payload.monto <= 0) {
-        alert('Indique el valor del cálculo y un monto de comisión mayor que cero.');
+        avisarAdvertencia('Faltan datos', 'Indique el valor del cálculo y un monto de comisión mayor que cero.');
         return;
       }
       try {
@@ -1908,7 +1924,7 @@ async function renderPlanilla() {
         modal.innerHTML = '';
         await recargarComisiones();
       } catch (err) {
-        alert('No se pudo guardar la comisión: ' + err.message);
+        avisarError('No se pudo guardar la comisión', err.message);
       }
     };
 
@@ -1992,10 +2008,9 @@ async function renderPlanilla() {
         });
         modal.innerHTML = '';
         await recargarComisiones();
-        alert(`Período ${res.periodo}: ${res.creadas} comisión(es) generada(s) de ${res.viajes} viaje(s).` +
-          (res.omitidas ? `\n${res.omitidas} conductor(es) ya tenían comisión en el período.` : ''));
+        avisar({ estado: 'exito', titulo: 'Comisiones generadas', mensaje: `Período ${textoSeguro(res.periodo)}`, detalles: [['Comisiones creadas', res.creadas], ['Viajes considerados', res.viajes]].concat(res.omitidas ? [['Conductores omitidos (ya tenían comisión)', res.omitidas]] : []) });
       } catch (err) {
-        alert('No se pudieron generar las comisiones: ' + err.message);
+        avisarError('No se pudieron generar las comisiones', err.message);
       }
     };
 
@@ -2230,12 +2245,12 @@ async function renderPlanilla() {
     });
     cont.querySelectorAll('.btnEliminarEmp').forEach(b => {
       b.onclick = async () => {
-        if (!confirm('¿Está seguro de eliminar este empleado?')) return;
+        if (!await confirmarAccion({ estado: 'error', titulo: '¿Eliminar este empleado?', mensaje: 'Esta acción no se puede deshacer.', botonOk: 'Eliminar', okPeligroso: true })) return;
         try {
           await window.api.empleados.eliminar(b.dataset.id);
           await cargarEmpleados();
         } catch (err) {
-          alert(err.message);
+          avisarError('No se pudo completar la acción', err.message);
         }
       };
     });
@@ -2313,7 +2328,7 @@ async function renderPlanilla() {
         activo: parseInt(document.getElementById('empActivo').value, 10)
       };
       if (!payload.nombre) {
-        alert('El nombre del empleado es obligatorio.');
+        avisarAdvertencia('Falta el nombre', 'El nombre del empleado es obligatorio.');
         return;
       }
       try {
@@ -2321,7 +2336,7 @@ async function renderPlanilla() {
         modal.innerHTML = '';
         await cargarEmpleados();
       } catch (err) {
-        alert(err.message);
+        avisarError('No se pudo completar la acción', err.message);
       }
     };
   }
@@ -2409,46 +2424,46 @@ async function montarPanelBaseDatos() {
   document.getElementById('btnRespaldar').onclick = async () => {
     try {
       const res = await window.api.sistema.respaldo();
-      alert('Respaldo creado correctamente:\n' + res.archivo + `\n(${tamanoLegible(res.tamanio)})`);
+      avisar({ estado: 'exito', titulo: 'Respaldo creado', mensaje: 'La copia de seguridad se guardó correctamente.', detalles: [['Archivo', textoSeguro(res.archivo)], ['Tamaño', textoSeguro(tamanoLegible(res.tamanio))]] });
     } catch (err) {
-      alert('No se pudo crear el respaldo: ' + err.message);
+      avisarError('No se pudo crear el respaldo', err.message);
     }
   };
 
   document.getElementById('btnAbrirCarpeta').onclick = () => window.api.sistema.abrirCarpeta();
 
   document.getElementById('btnCargarEjemplo').onclick = async () => {
-    if (!confirm('Se cargarán datos de ejemplo en las tablas que estén vacías. ¿Continuar?')) return;
+    if (!await confirmarAccion({ titulo: '¿Cargar datos de ejemplo?', mensaje: 'Se cargarán datos de ejemplo solo en las tablas que estén vacías.', botonOk: 'Cargar datos' })) return;
     try {
       const res = await window.api.sistema.datosEjemplo();
-      const detalle = Object.entries(res.insertados).map(([t, n]) => `${t}: ${n}`).join('\n');
-      alert(detalle ? 'Datos de ejemplo cargados:\n' + detalle : 'Todas las tablas ya contienen información; no se insertó nada.');
+      const filas = Object.entries(res.insertados).map(([t, n]) => [textoSeguro(t), n]);
+      if (filas.length) avisar({ estado: 'exito', titulo: 'Datos de ejemplo cargados', detalles: filas });
+      else avisar({ estado: 'info', titulo: 'No se insertó nada', mensaje: 'Todas las tablas ya contienen información.' });
       await montarPanelBaseDatos();
     } catch (err) {
-      alert('No se pudieron cargar los datos de ejemplo: ' + err.message);
+      avisarError('No se pudieron cargar los datos de ejemplo', err.message);
     }
   };
 
   document.getElementById('btnLimpiarOperativo').onclick = async () => {
-    if (!confirm('Se borrarán ingresos, egresos, viáticos, planillas, combustible y bitácora. Los catálogos (clientes, vehículos, conductores y empleados) se conservan. ¿Continuar?')) return;
+    if (!await confirmarAccion({ estado: 'advertencia', titulo: '¿Borrar los movimientos?', mensaje: 'Se borrarán ingresos, egresos, viáticos, planillas, combustible y bitácora. Los catálogos (clientes, vehículos, conductores y empleados) se conservan.', botonOk: 'Borrar movimientos', okPeligroso: true })) return;
     try {
       await window.api.sistema.limpiar('operativo');
-      alert('Movimientos borrados correctamente.');
+      avisarExito('Movimientos borrados', 'Los catálogos se conservaron.');
       await montarPanelBaseDatos();
     } catch (err) {
-      alert('No se pudieron borrar los movimientos: ' + err.message);
+      avisarError('No se pudieron borrar los movimientos', err.message);
     }
   };
 
   document.getElementById('btnLimpiarTotal').onclick = async () => {
-    const confirmacion = prompt('Esta acción borra TODA la información (incluyendo clientes, vehículos, conductores y empleados).\nEscriba BORRAR para confirmar:');
-    if (confirmacion !== 'BORRAR') return;
+    if (!await confirmarEscribiendo({ titulo: '¿Borrar TODA la información?', mensaje: 'Esta acción borra todo, incluyendo clientes, vehículos, conductores y empleados. No se puede deshacer.', palabra: 'BORRAR', botonOk: 'Borrar todo' })) return;
     try {
       await window.api.sistema.limpiar('total');
-      alert('La base de datos quedó vacía y lista para usarse con información real.');
+      avisarExito('Base de datos vacía', 'Quedó lista para usarse con información real.');
       await montarPanelBaseDatos();
     } catch (err) {
-      alert('No se pudieron borrar los datos: ' + err.message);
+      avisarError('No se pudieron borrar los datos', err.message);
     }
   };
 }

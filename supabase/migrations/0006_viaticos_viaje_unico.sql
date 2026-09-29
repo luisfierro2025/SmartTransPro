@@ -1,0 +1,14 @@
+-- Un viaje de Bitácora no se puede cobrar con dos viáticos: si ya existe un
+-- viático (pendiente o liquidado) sobre ese viaje, no se puede registrar otro.
+--
+-- El índice es PARCIAL porque los viáticos sin viaje (viaje_id nulo) no se
+-- comparan entre sí: varios de esos son legítimos y en SQL NULL nunca es igual
+-- a NULL, así que un índice normal no los mezclaría pero tampoco hace falta.
+--
+-- Si la base ya tuviera dos viáticos sobre el mismo viaje, este CREATE falla.
+-- La migración es idempotente y se deja constancia en migraciones_aplicadas,
+-- pero por seguridad el código (server/postgres-base.js) también intenta crear
+-- el índice al arrancar dentro de un try/catch, para que una base con
+-- duplicados antigos no impida que la aplicación abra. Los duplicados que ya
+-- existan se conservan: solo se impiden los nuevos.
+create unique index if not exists idx_viaticos_viaje_unico on viaticos(viaje_id) where viaje_id is not null;

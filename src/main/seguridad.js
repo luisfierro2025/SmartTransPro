@@ -101,6 +101,11 @@ function generarToken() {
   return crypto.randomBytes(32).toString('hex');
 }
 
+/** Clave de un teléfono rastreador (128 bits). Se muestra una sola vez; en la base solo va su hash. */
+function generarClaveDispositivo() {
+  return crypto.randomBytes(16).toString('hex');
+}
+
 /**
  * En la base solo se guarda el SHA-256 del token: si alguien lee el archivo de
  * la base de datos no puede suplantar una sesión con el valor almacenado.
@@ -214,6 +219,7 @@ module.exports = {
   problemaClave,
   problemasUsuario,
   generarToken,
+  generarClaveDispositivo,
   hashToken,
   expiracionSql,
   normalizarRol,

@@ -11,7 +11,7 @@ const fs = require('fs');
 let db = null;
 
 const NOMBRE_ARCHIVO = 'control-empresa.db';
-const VERSION_ESQUEMA = 6;
+const VERSION_ESQUEMA = 7;
 
 // Permite mover la base de datos a otra ubicación (respaldos, red o pruebas).
 function obtenerRutaBaseDatos() {
@@ -24,6 +24,26 @@ function obtenerRutaBaseDatos() {
   const carpeta = electron.app ? electron.app.getPath('userData') : path.join(process.cwd(), 'datos');
   fs.mkdirSync(carpeta, { recursive: true });
   return path.join(carpeta, NOMBRE_ARCHIVO);
+}
+
+// Recupera la base existente incluida en este paquete únicamente cuando la
+// ruta de datos del usuario todavía no existe. Nunca reemplaza una base con
+// contenido, por lo que una actualización no puede borrar movimientos.
+function prepararBaseInicial(archivo) {
+  if (fs.existsSync(archivo)) {
+    try {
+      if (fs.statSync(archivo).size > 0) return;
+    } catch (e) { return; }
+  }
+  const respaldoIncluido = path.join(__dirname, '../../datos/control-empresa.db');
+  if (!fs.existsSync(respaldoIncluido)) return;
+  try {
+    fs.mkdirSync(path.dirname(archivo), { recursive: true });
+    fs.copyFileSync(respaldoIncluido, archivo);
+    console.log(`[base] Base inicial recuperada desde ${respaldoIncluido}`);
+  } catch (e) {
+    console.warn('[base] No se pudo recuperar la base inicial:', e.message);
+  }
 }
 
 function obtenerCarpetaRespaldos() {
@@ -339,11 +359,58 @@ function aplicarMigraciones() {
   asegurarColumna('conductores', 'licencia_trasera', 'TEXT');
   asegurarColumna('conductores', 'carnet_federacion', 'TEXT');
   asegurarColumna('configuracion', 'logo_empresa', "TEXT NOT NULL DEFAULT ''");
+  // Monitoreo por GPS de los teléfonos de los conductores (un teléfono por conductor).
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS dispositivos_gps(
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      conductor_id INTEGER NOT NULL UNIQUE,
+      vehiculo_id INTEGER,
+      token_hash TEXT NOT NULL UNIQUE,
+      activo INTEGER NOT NULL DEFAULT 1,
+      lat REAL, lng REAL, precision_m REAL, velocidad_kmh REAL, rumbo REAL, bateria REAL,
+      ultimo_reporte TEXT,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY(conductor_id) REFERENCES conductores(id) ON DELETE CASCADE,
+      FOREIGN KEY(vehiculo_id) REFERENCES vehiculos(id) ON DELETE SET NULL
+    );
+    CREATE TABLE IF NOT EXISTS posiciones_gps(
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      dispositivo_id INTEGER NOT NULL,
+      lat REAL NOT NULL, lng REAL NOT NULL, precision_m REAL, velocidad_kmh REAL,
+      registrado_en TEXT NOT NULL,
+      FOREIGN KEY(dispositivo_id) REFERENCES dispositivos_gps(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_posiciones_disp_fecha ON posiciones_gps(dispositivo_id, registrado_en);
+  `);
   db.exec(`
     CREATE INDEX IF NOT EXISTS idx_viaticos_conductor ON viaticos(conductor_id);
     CREATE INDEX IF NOT EXISTS idx_viaticos_viaje ON viaticos(viaje_id);
   `);
+  asegurarViajeUnicoPorViatico();
   db.pragma(`user_version = ${VERSION_ESQUEMA}`);
+}
+
+// Un viaje no se puede cobrar con dos viáticos. El índice único es la última
+// línea de defensa (la validación de guardarViatico ya da el mensaje claro),
+// pero protege aunque alguien escriba en la base por fuera.
+//
+// Es un índice PARCIAL: los viáticos sin viaje (NULL) no se comparan entre sí,
+// porque en SQL NULL nunca es igual a NULL y varias filas NULL no colisionan.
+// Si la base ya tuviera duplicados de antes, el índice no se puede crear: en
+// ese caso se avisa por consola y la app sigue funcionando con la validación
+// de la aplicación, en vez de negarse a arrancar.
+function asegurarViajeUnicoPorViatico() {
+  try {
+    db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_viaticos_viaje_unico ON viaticos(viaje_id) WHERE viaje_id IS NOT NULL;');
+  } catch (e) {
+    const repetidos = db.prepare(`
+      SELECT viaje_id, COUNT(*) total FROM viaticos
+      WHERE viaje_id IS NOT NULL GROUP BY viaje_id HAVING COUNT(*) > 1`).all();
+    console.warn(
+      '[base] No se creó el índice único de viáticos por viaje: ya existen viáticos duplicados.',
+      repetidos.map(r => `viaje ${r.viaje_id} (${r.total} viáticos)`).join(', ') || e.message
+    );
+  }
 }
 
 // ---------------------------------------------------------------- ciclo de vida
@@ -352,6 +419,7 @@ function aplicarMigraciones() {
 function inicializarBaseDatos() {
   if (db) return db;
   const archivo = obtenerRutaBaseDatos();
+  prepararBaseInicial(archivo);
   db = new Database(archivo);
   envoltorio = null; // la conexión anterior queda obsoleta
   db.pragma('journal_mode = WAL');
@@ -539,7 +607,9 @@ function limpiarDatos(alcance) {
   const base = obtenerDB();
   const operativas = ['planilla_detalle', 'planillas', 'viaticos', 'comisiones', 'ingresos', 'egresos', 'combustible', 'bitacora_viajes', 'movimientos_auditoria'];
   const catalogos = ['clientes', 'vehiculos', 'conductores', 'empleados'];
-  const tablas = alcance === 'total' ? operativas.concat(catalogos) : operativas;
+  // El historial GPS es operativo; los teléfonos vinculados solo se borran en la limpieza total.
+  operativas.push('posiciones_gps');
+  const tablas = alcance === 'total' ? operativas.concat(['dispositivos_gps'], catalogos) : operativas;
   const borrados = {};
   base.transaction(() => {
     for (const tabla of tablas) {

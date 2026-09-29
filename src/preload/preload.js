@@ -1,7 +1,10 @@
 const {contextBridge,ipcRenderer}=require('electron');
 contextBridge.exposeInMainWorld('api',{
   app:{info:()=>ipcRenderer.invoke('app:info')},
-  dashboard:{resumen:()=>ipcRenderer.invoke('dashboard:resumen')},
+  dashboard:{
+    resumen:()=>ipcRenderer.invoke('dashboard:resumen'),
+    tablero:f=>ipcRenderer.invoke('dashboard:tablero',f)
+  },
   configuracion:{obtener:()=>ipcRenderer.invoke('configuracion:obtener'),guardar:d=>ipcRenderer.invoke('configuracion:guardar',d)},
   reportes:{egresos:f=>ipcRenderer.invoke('reportes:egresos',f),combustible:f=>ipcRenderer.invoke('reportes:combustible',f),pdf:(html,nombreSugerido)=>ipcRenderer.invoke('reportes:pdf',{html,nombreSugerido})},
   bitacora:{
@@ -56,6 +59,7 @@ contextBridge.exposeInMainWorld('api',{
   },
   viaticos:{
     listar:f=>ipcRenderer.invoke('viaticos:listar',f),
+    viajes_disponibles:f=>ipcRenderer.invoke('viaticos:viajes_disponibles',f),
     guardar:d=>ipcRenderer.invoke('viaticos:guardar',d),
     liquidar:id=>ipcRenderer.invoke('viaticos:liquidar',id),
     eliminar:id=>ipcRenderer.invoke('viaticos:eliminar',id),
@@ -95,6 +99,12 @@ contextBridge.exposeInMainWorld('api',{
     cerrarSesion:d=>ipcRenderer.invoke('usuarios:cerrar_sesion',d),
     cambiarClave:d=>ipcRenderer.invoke('usuarios:cambiar_clave',d),
     restablecerClave:d=>ipcRenderer.invoke('usuarios:restablecer_clave',d)
+  },
+  monitoreo:{
+    listar:d=>ipcRenderer.invoke('monitoreo:listar',d),
+    vincular:d=>ipcRenderer.invoke('monitoreo:vincular',d),
+    desvincular:d=>ipcRenderer.invoke('monitoreo:desvincular',d),
+    historial:d=>ipcRenderer.invoke('monitoreo:historial',d)
   },
   sistema:{
     info:()=>ipcRenderer.invoke('sistema:info'),

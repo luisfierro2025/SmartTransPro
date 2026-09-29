@@ -24,6 +24,7 @@ const {
   problemaClave,
   problemasUsuario,
   generarToken,
+  generarClaveDispositivo,
   hashToken,
   normalizarRol,
   esAdmin,
@@ -248,11 +249,63 @@ async function listarViaticos(_, f = {}) {
     ORDER BY date(v.fecha) DESC, v.id DESC`).all(p);
 }
 
+// Viajes de Bitácora que todavía se pueden cobrar con un viático.
+//
+// Regla de negocio: un viaje se cobra UNA sola vez. Si el viaje ya tiene un
+// viático (pendiente o liquidado) queda excluido, para que no se pueda
+// registrar un segundo cobro del mismo traslado. Al editar un viático se envía
+// su id en "viatico_id": ese registro no cuenta como uso, así el viaje sigue
+// disponible y se puede modificar el monto o los datos sin perder el vínculo.
+//
+// La cláusula de exclusión se arma según el caso en vez de enviar un NULL:
+// PostgreSQL no puede deducir el tipo de un parámetro que llega nulo y
+// responde "could not determine data type of parameter $2" (error 42P18).
+async function listarViajesParaViatico(_, f = {}) {
+  const db = obtenerDB();
+  const viaticoId = entero(f.viatico_id);
+  const p = { conductor_id: entero(f.conductor_id) };
+  const excluirPropio = viaticoId ? 'AND v.id <> @viatico_id' : '';
+  if (viaticoId) p.viatico_id = viaticoId;
+  return await db.prepare(`
+    SELECT b.*, c.nombre AS conductor_nombre
+    FROM bitacora_viajes b
+    LEFT JOIN conductores c ON c.id = b.conductor_id
+    WHERE b.conductor_id = @conductor_id
+      AND b.id NOT IN (
+        SELECT v.viaje_id FROM viaticos v
+        WHERE v.viaje_id IS NOT NULL ${excluirPropio}
+      )
+    ORDER BY date(b.fecha) DESC, b.id DESC`).all(p);
+}
+
+// Impide cobrar dos veces el mismo viaje. La comprobación va en el servidor y
+// no solo en la interfaz: el desplegable puede ocultarlo, pero esta validación
+// es la que cierra de verdad el paso (API, web o cualquier otro cliente).
+// Editar el mismo viático (d.id) se permite: no es un segundo cobro.
+//
+// Se cuentan los OTROS viáticos del viaje, sin mirar su estado: pendiente,
+// liquidado o duplicado antiguo, todos cuentan como "ya cobrado".
+async function verificarViajeSinCobrar(db, viajeId, viaticoId) {
+  if (!viajeId) return;
+  const p = viaticoId ? { viaje_id: viajeId, viatico_id: viaticoId } : { viaje_id: viajeId };
+  const otros = viaticoId ? 'AND v.id <> @viatico_id' : '';
+  const usos = await db.prepare(`
+    SELECT COUNT(*) total FROM viaticos v
+    WHERE v.viaje_id = @viaje_id ${otros}`).get(p);
+  if (!usos.total) return;
+  throw new Error(
+    `El viaje #${viajeId} ya tiene un viático registrado. Un viaje no se puede cobrar dos veces con viáticos.`
+  );
+}
+
 async function guardarViatico(_, d) {
   const db = obtenerDB();
   const liquidado = booleano(d.liquidado);
   const estado = liquidado ? 'LIQUIDADO' : 'PENDIENTE';
-  const datos = [entero(d.conductor_id), entero(d.viaje_id), d.fecha, texto(d.destino), texto(d.motivo), numero(d.monto), liquidado, estado, texto(d.observacion)];
+  const viajeId = entero(d.viaje_id);
+  const viaticoId = entero(d.id);
+  await verificarViajeSinCobrar(db, viajeId, viaticoId);
+  const datos = [entero(d.conductor_id), viajeId, d.fecha, texto(d.destino), texto(d.motivo), numero(d.monto), liquidado, estado, texto(d.observacion)];
   if (d.id) {
     await db.prepare('UPDATE viaticos SET conductor_id=?, viaje_id=?, fecha=?, destino=?, motivo=?, monto=?, liquidado=?, estado=?, observacion=? WHERE id=?')
       .run(...datos, d.id);
@@ -547,8 +600,144 @@ async function generarComisiones(_, d = {}) {
 }
 
 
-// ---------------------------------------------------------------- planilla
+// ---------------------------------------------------------------- dashboard
 
+// Serie mensual para el gráfico del dashboard: ingresos y egresos agrupados por
+// mes. El mes se arma con substr(cast(fecha as text),1,7) porque funciona igual
+// en SQLite (texto) y en PostgreSQL (date), donde un cast directo no serviría.
+async function serieMensual(db, tabla, desde, hasta) {
+  const mes = 'substr(cast(fecha as text),1,7)';
+  return await db.prepare(`
+    SELECT ${mes} AS mes, COALESCE(SUM(monto),0) AS total, COUNT(*) AS cantidad
+    FROM ${tabla}
+    WHERE date(fecha) >= date(@desde) AND date(fecha) <= date(@hasta)
+    GROUP BY ${mes}
+    ORDER BY ${mes}`).all({ desde, hasta });
+}
+
+// Rango de los N meses que cierran en el mes actual: desde el día 1 del mes
+// (N-1 meses atrás) hasta el último día de este mes. Alimenta el filtro por
+// período y el rango del gráfico.
+function rangoDeMeses(aniosAtras) {
+  const hoy = new Date();
+  const fin = new Date(hoy.getFullYear(), hoy.getMonth() + 1, 0);
+  const inicio = new Date(hoy.getFullYear(), hoy.getMonth() - aniosAtras + 1, 1);
+  return {
+    desde: inicio.toISOString().slice(0, 10),
+    hasta: fin.toISOString().slice(0, 10)
+  };
+}
+
+// Tableau de mando del período elegido. Trae en una sola respuesta todo lo que
+// la pantalla necesita: totales del período y del anterior (para la variación),
+// serie mensual (para el gráfico), desglose por categoría, indicadores
+// operativos y los pendientes que exigen atención.
+async function resumenDashboard(_, f = {}) {
+  const db = obtenerDB();
+  // Por defecto, el mes en curso.
+  let desde = texto(f.desde);
+  let hasta = texto(f.hasta);
+  if (!desde || !hasta) {
+    const r = rangoDeMeses(1);
+    desde = r.desde;
+    hasta = r.hasta;
+  }
+
+  // Período anterior de la misma duración: la base de la comparación.
+  const dias = Math.max(1, Math.round((new Date(hasta) - new Date(desde)) / 86400000) + 1);
+  const finAnterior = new Date(new Date(desde).getTime() - 86400000);
+  const inicioAnterior = new Date(finAnterior.getTime() - (dias - 1) * 86400000);
+  const previo = {
+    desde: inicioAnterior.toISOString().slice(0, 10),
+    hasta: finAnterior.toISOString().slice(0, 10)
+  };
+
+  // Meses para el gráfico: seis hacia atrás desde el mes de "hasta".
+  const finMes = new Date(hasta);
+  const serie = {
+    desde: new Date(finMes.getFullYear(), finMes.getMonth() - 5, 1).toISOString().slice(0, 10),
+    hasta: new Date(finMes.getFullYear(), finMes.getMonth() + 1, 0).toISOString().slice(0, 10)
+  };
+
+  const [ingresosP, egresosP, ingresosAnt, egresosAnt, serieIng, serieEgr] = await Promise.all([
+    resumenFinanciero('ingresos', { desde, hasta }),
+    resumenFinanciero('egresos', { desde, hasta }),
+    resumenFinanciero('ingresos', previo),
+    resumenFinanciero('egresos', previo),
+    serieMensual(db, 'ingresos', serie.desde, serie.hasta),
+    serieMensual(db, 'egresos', serie.desde, serie.hasta)
+  ]);
+
+  // En PostgreSQL un COALESCE(SUM(...),0) sobre una tabla vacía puede llegar
+  // como null y COUNT(*) como texto, así que todo se pasa por numero(): si no,
+  // la utilidad del dashboard salía como NaN.
+  const total = async (sql, p) => numero((await db.prepare(sql).get(p)).total);
+
+  // Costos del período que no pasan por la tabla de egresos: planilla,
+  // combustible y viáticos. Son costo real aunque estén en otras tablas.
+  const [planilla, combustible, viaticos, viaticosPendientes] = await Promise.all([
+    total(
+      `SELECT COALESCE(SUM(total_neto),0) total FROM planillas
+       WHERE date(COALESCE(fecha_pago, created_at)) >= date(@desde)
+         AND date(COALESCE(fecha_pago, created_at)) <= date(@hasta)`, { desde, hasta }),
+    total(
+      `SELECT COALESCE(SUM(total),0) total FROM combustible
+       WHERE date(fecha) >= date(@desde) AND date(fecha) <= date(@hasta)`, { desde, hasta }),
+    total(
+      `SELECT COALESCE(SUM(monto),0) total FROM viaticos
+       WHERE date(fecha) >= date(@desde) AND date(fecha) <= date(@hasta)`, { desde, hasta }),
+    // Los viáticos sin liquidar son deuda con el conductor: se acumulan entre
+    // períodos, así que se cuentan todos, no solo los del mes.
+    total('SELECT COALESCE(SUM(monto),0) total FROM viaticos WHERE liquidado = 0', {})
+  ]);
+
+  // Operación del período y de la flota actual.
+  const [viajes, km, unidades, conductores, enCurso] = await Promise.all([
+    total(`SELECT COUNT(*) total FROM bitacora_viajes
+           WHERE date(fecha) >= date(@desde) AND date(fecha) <= date(@hasta)`, { desde, hasta }),
+    total(`SELECT COALESCE(SUM(km_recorridos),0) total FROM bitacora_viajes
+           WHERE date(fecha) >= date(@desde) AND date(fecha) <= date(@hasta)`, { desde, hasta }),
+    total('SELECT COUNT(*) total FROM vehiculos WHERE activo = 1', {}),
+    total('SELECT COUNT(*) total FROM conductores WHERE activo = 1', {}),
+    total("SELECT COUNT(*) total FROM bitacora_viajes WHERE estado = 'EN CURSO'", {})
+  ]);
+
+  // La serie se arma en memoria porque el gráfico quiere una barra por mes
+  // aunque ese mes no tenga movimientos (barra en cero, no un mes que falta).
+  const porMes = new Map();
+  for (const f2 of serieIng) porMes.set(f2.mes, { mes: f2.mes, ingresos: Number(f2.total) || 0, egresos: 0 });
+  for (const f2 of serieEgr) {
+    const fila = porMes.get(f2.mes) || { mes: f2.mes, ingresos: 0, egresos: 0 };
+    fila.egresos = Number(f2.total) || 0;
+    porMes.set(f2.mes, fila);
+  }
+
+  const totalIngresos = numero(ingresosP.total);
+  const totalEgresos = numero(egresosP.total);
+  const costosOperativos = planilla + combustible + viaticos;
+  const utilidad = totalIngresos - totalEgresos - costosOperativos;
+
+  return {
+    rango: { desde, hasta, previo },
+    financiero: {
+      ingresos: totalIngresos,
+      egresos: totalEgresos,
+      planilla,
+      combustible,
+      viaticos,
+      costosOperativos,
+      utilidad,
+      margen: totalIngresos > 0 ? utilidad / totalIngresos : 0,
+      anterior: { ingresos: numero(ingresosAnt.total), egresos: numero(egresosAnt.total) },
+      porCategoriaIngresos: (ingresosP.porCategoria || []).map(c => ({ categoria: c.categoria, total: numero(c.total), cantidad: numero(c.cantidad) })),
+      porCategoriaEgresos: (egresosP.porCategoria || []).map(c => ({ categoria: c.categoria, total: numero(c.total), cantidad: numero(c.cantidad) })),
+      movimientos: numero(ingresosP.cantidad) + numero(egresosP.cantidad)
+    },
+    serie: [...porMes.values()].sort((a, b) => (a.mes < b.mes ? -1 : 1)),
+    operativo: { viajes, viajesEnCurso: enCurso, km, unidades, conductores },
+    pendientes: { viaticos: viaticosPendientes }
+  };
+}
 async function listarPlanillas(_, f = {}) {
   const db = obtenerDB();
   const condiciones = ['1=1'];
@@ -1093,6 +1282,154 @@ async function restablecerClave(_, d = {}) {
 
 // ---------------------------------------------------------------- registro de canales
 
+// ---------------------------------------------------------- monitoreo por GPS
+// Cada conductor puede tener UN teléfono vinculado. La oficina genera un enlace
+// con una clave; el teléfono abre rastreo.html (o una app como Traccar Client) y
+// envía su posición. En la base solo se guarda el HASH de la clave, y la clave
+// nunca viaja en las consultas de lectura.
+const MIN_EN_LINEA = 3;
+const MIN_DEMORADO = 15;
+const DIAS_HISTORIAL_GPS = 14;
+
+const esVerdadero = (v) => v === true || Number(v) === 1;
+const aNumeroONulo = (v) => (v === null || v === undefined || v === '' || !Number.isFinite(Number(v)) ? null : Number(v));
+const limitar = (v, min, max) => { const n = aNumeroONulo(v); return n === null ? null : Math.min(max, Math.max(min, n)); };
+
+function estadoDeSenal(ultimoReporte, vinculado) {
+  if (!vinculado) return 'SIN_VINCULAR';
+  const t = ultimoReporte ? new Date(ultimoReporte).getTime() : NaN;
+  if (!Number.isFinite(t)) return 'SIN_SENAL';
+  const min = (Date.now() - t) / 60000;
+  return min <= MIN_EN_LINEA ? 'EN_LINEA' : min <= MIN_DEMORADO ? 'DEMORADO' : 'SIN_SENAL';
+}
+
+// Cualquier usuario con sesión puede consultar; vincular/desvincular exige poder operar.
+async function exigirSesionMonitoreo(token, escritura = false) {
+  const usuario = await usuarioDesdeToken(token);
+  if (escritura && normalizarRol(usuario.rol) === 'CONSULTA') throw new Error('Su rol solo permite consultar. Pida a un operador o administrador que lo haga.');
+  return usuario;
+}
+
+async function listarMonitoreo(_, d = {}) {
+  await exigirSesionMonitoreo(d.token);
+  const db = obtenerDB();
+  const filas = await db.prepare(
+    `SELECT c.id AS conductor_id, c.nombre, g.id AS dispositivo_id, g.activo AS vinculado, g.vehiculo_id, v.placa,
+            g.lat, g.lng, g.precision_m, g.velocidad_kmh, g.rumbo, g.bateria, g.ultimo_reporte
+     FROM conductores c
+     LEFT JOIN dispositivos_gps g ON g.conductor_id = c.id
+     LEFT JOIN vehiculos v ON v.id = g.vehiculo_id
+     WHERE c.activo = 1 ORDER BY c.nombre`
+  ).all();
+  // Viaje en curso de cada conductor (el más reciente gana): da contexto al punto del mapa.
+  const viajes = await db.prepare("SELECT id, conductor_id, destino FROM bitacora_viajes WHERE estado = 'EN CURSO' AND conductor_id IS NOT NULL ORDER BY id").all();
+  const destinoPor = {};
+  for (const v of viajes) destinoPor[v.conductor_id] = v.destino;
+  const resumen = { vinculados: 0, en_linea: 0, demorados: 0, sin_senal: 0, sin_vincular: 0 };
+  const conductores = filas.map((f) => {
+    const vinculado = f.dispositivo_id !== null && f.dispositivo_id !== undefined && esVerdadero(f.vinculado);
+    const estado = estadoDeSenal(f.ultimo_reporte, vinculado);
+    if (vinculado) resumen.vinculados++;
+    if (estado === 'EN_LINEA') resumen.en_linea++;
+    else if (estado === 'DEMORADO') resumen.demorados++;
+    else if (estado === 'SIN_SENAL') resumen.sin_senal++;
+    else resumen.sin_vincular++;
+    return {
+      conductor_id: Number(f.conductor_id), nombre: f.nombre, vinculado, estado,
+      vehiculo_id: f.vehiculo_id === null || f.vehiculo_id === undefined ? null : Number(f.vehiculo_id), placa: f.placa || null,
+      lat: aNumeroONulo(f.lat), lng: aNumeroONulo(f.lng), precision_m: aNumeroONulo(f.precision_m),
+      velocidad_kmh: aNumeroONulo(f.velocidad_kmh), rumbo: aNumeroONulo(f.rumbo), bateria: aNumeroONulo(f.bateria),
+      ultimo_reporte: f.ultimo_reporte || null, destino: destinoPor[f.conductor_id] || null
+    };
+  });
+  return { ahora: new Date().toISOString(), resumen, conductores };
+}
+
+async function vincularDispositivo(_, d = {}) {
+  await exigirSesionMonitoreo(d.token, true);
+  const db = obtenerDB();
+  const conductorId = entero(d.conductor_id);
+  if (!conductorId) throw new Error('Seleccione un conductor.');
+  const conductor = await db.prepare('SELECT id, nombre FROM conductores WHERE id = ? AND activo = 1').get(conductorId);
+  if (!conductor) throw new Error('El conductor no existe o está inactivo.');
+  const vehiculoId = entero(d.vehiculo_id);
+  const clave = generarClaveDispositivo();
+  const hash = hashToken(clave);
+  const existente = await db.prepare('SELECT id FROM dispositivos_gps WHERE conductor_id = ?').get(conductorId);
+  // Regenerar el enlace invalida el teléfono anterior y limpia su última posición.
+  if (existente) {
+    await db.prepare('UPDATE dispositivos_gps SET token_hash = ?, vehiculo_id = ?, activo = 1, lat = NULL, lng = NULL, precision_m = NULL, velocidad_kmh = NULL, rumbo = NULL, bateria = NULL, ultimo_reporte = NULL WHERE id = ?').run(hash, vehiculoId, existente.id);
+  } else {
+    await db.prepare('INSERT INTO dispositivos_gps (conductor_id, vehiculo_id, token_hash) VALUES (?, ?, ?)').run(conductorId, vehiculoId, hash);
+  }
+  return { ok: true, conductor_id: conductorId, conductor: conductor.nombre, clave };
+}
+
+async function desvincularDispositivo(_, d = {}) {
+  await exigirSesionMonitoreo(d.token, true);
+  const conductorId = entero(d.conductor_id);
+  if (!conductorId) throw new Error('Seleccione un conductor.');
+  await obtenerDB().prepare('UPDATE dispositivos_gps SET activo = 0 WHERE conductor_id = ?').run(conductorId);
+  return { ok: true };
+}
+
+// Lo llama el teléfono (sin sesión de usuario): se autentica con la clave del enlace.
+// Acepta una posición suelta o { puntos: [...] } para vaciar la cola acumulada sin señal.
+async function reportarPosicion(_, d = {}) {
+  const clave = texto(d.clave);
+  if (!clave || clave.length < 16 || clave.length > 128) throw new Error('Clave de dispositivo inválida.');
+  const db = obtenerDB();
+  const disp = await db.prepare('SELECT g.id, c.nombre FROM dispositivos_gps g JOIN conductores c ON c.id = g.conductor_id WHERE g.token_hash = ? AND g.activo = 1 AND c.activo = 1').get(hashToken(clave));
+  // 200 con "revocado": el teléfono debe dejar de rastrear en vez de reintentar para siempre.
+  if (!disp) return { ok: false, revocado: true, error: 'Este teléfono ya no está autorizado. Pida un enlace nuevo a la oficina.' };
+  const ahora = Date.now();
+  const brutos = Array.isArray(d.puntos) && d.puntos.length ? d.puntos : [d];
+  const puntos = [];
+  for (const p of brutos.slice(0, 100)) {
+    const lat = Number(p.lat), lng = Number(p.lng);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180 || (lat === 0 && lng === 0)) continue;
+    let t = aNumeroONulo(p.ts);
+    if (t === null || t > ahora + 300000) t = ahora;
+    if (t < ahora - 86400000) continue; // más de 24 h de antigüedad: se descarta
+    puntos.push({ lat, lng, t, precision: limitar(p.precision, 0, 100000), velocidad: limitar(p.velocidad, 0, 400), rumbo: limitar(p.rumbo, 0, 360), bateria: limitar(p.bateria, 0, 100) });
+  }
+  if (!puntos.length) throw new Error('No llegó ninguna posición válida.');
+  puntos.sort((a, b) => a.t - b.t);
+  for (const p of puntos) {
+    await db.prepare('INSERT INTO posiciones_gps (dispositivo_id, lat, lng, precision_m, velocidad_kmh, registrado_en) VALUES (?, ?, ?, ?, ?, ?)')
+      .run(disp.id, p.lat, p.lng, p.precision, p.velocidad, new Date(p.t).toISOString());
+  }
+  const u = puntos[puntos.length - 1];
+  const iso = new Date(u.t).toISOString();
+  // Solo avanza la "última posición": un lote viejo nunca pisa una lectura más reciente.
+  await db.prepare('UPDATE dispositivos_gps SET lat = ?, lng = ?, precision_m = ?, velocidad_kmh = ?, rumbo = ?, bateria = COALESCE(?, bateria), ultimo_reporte = ? WHERE id = ? AND (ultimo_reporte IS NULL OR ultimo_reporte <= ?)')
+    .run(u.lat, u.lng, u.precision, u.velocidad, u.rumbo, u.bateria, iso, disp.id, iso);
+  // Depuración perezosa: 1 de cada 50 reportes borra el historial vencido.
+  if (Math.random() < 0.02) await db.prepare('DELETE FROM posiciones_gps WHERE registrado_en < ?').run(new Date(ahora - DIAS_HISTORIAL_GPS * 86400000).toISOString());
+  return { ok: true, recibidos: puntos.length, conductor: disp.nombre };
+}
+
+// Protocolo OsmAnd (lo usan apps gratuitas como Traccar Client): id, lat, lon, timestamp, speed (nudos), bearing, accuracy, batt.
+async function reportarOsmand(_, d = {}) {
+  let ts = aNumeroONulo(d.timestamp);
+  if (ts !== null) ts = ts < 1e12 ? ts * 1000 : ts;
+  else if (d.timestamp) { const f = Date.parse(d.timestamp); ts = Number.isFinite(f) ? f : null; }
+  const nudos = aNumeroONulo(d.speed);
+  return reportarPosicion(_, { clave: d.id || d.deviceid, lat: d.lat, lng: d.lon !== undefined ? d.lon : d.lng, ts, precision: d.accuracy, velocidad: nudos === null ? null : nudos * 1.852, rumbo: d.bearing !== undefined ? d.bearing : d.heading, bateria: d.batt });
+}
+
+async function historialPosiciones(_, d = {}) {
+  await exigirSesionMonitoreo(d.token);
+  const conductorId = entero(d.conductor_id);
+  if (!conductorId) throw new Error('Seleccione un conductor.');
+  const horas = Math.min(72, Math.max(1, aNumeroONulo(d.horas) || 12));
+  const desde = new Date(Date.now() - horas * 3600000).toISOString();
+  const filas = await obtenerDB().prepare(
+    'SELECT p.lat, p.lng, p.velocidad_kmh, p.registrado_en FROM posiciones_gps p JOIN dispositivos_gps g ON g.id = p.dispositivo_id WHERE g.conductor_id = ? AND p.registrado_en >= ? ORDER BY p.registrado_en LIMIT 2000'
+  ).all(conductorId, desde);
+  return { horas, puntos: filas.map((f) => ({ lat: Number(f.lat), lng: Number(f.lng), velocidad_kmh: aNumeroONulo(f.velocidad_kmh), t: f.registrado_en })) };
+}
+
 const operaciones = {
   // Empleados
   'empleados:listar': listarEmpleados,
@@ -1110,8 +1447,11 @@ const operaciones = {
   'egresos:eliminar': eliminarEgreso,
   'egresos:resumen': (_, f) => resumenFinanciero('egresos', f),
   'finanzas:categorias': listarCategorias,
+  // Dashboard
+  'dashboard:tablero': resumenDashboard,
   // Viáticos
   'viaticos:listar': listarViaticos,
+  'viaticos:viajes_disponibles': listarViajesParaViatico,
   'viaticos:guardar': guardarViatico,
   'viaticos:liquidar': liquidarViatico,
   'viaticos:eliminar': eliminarViatico,
@@ -1144,6 +1484,13 @@ const operaciones = {
   'usuarios:cerrar_sesion': cerrarSesionUsuario,
   'usuarios:cambiar_clave': cambiarClave,
   'usuarios:restablecer_clave': restablecerClave,
+  // Monitoreo por GPS (los dos últimos los llama el teléfono, sin sesión)
+  'monitoreo:listar': listarMonitoreo,
+  'monitoreo:vincular': vincularDispositivo,
+  'monitoreo:desvincular': desvincularDispositivo,
+  'monitoreo:historial': historialPosiciones,
+  'monitoreo:reportar': reportarPosicion,
+  'monitoreo:osmand': reportarOsmand,
   // Base de datos / sistema
   'sistema:info': informacionBaseDatos,
   'sistema:datos_ejemplo': cargarDatosDeEjemplo,

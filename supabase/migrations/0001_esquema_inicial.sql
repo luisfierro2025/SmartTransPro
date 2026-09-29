@@ -1,7 +1,7 @@
 -- ============================================================================
--- Control Empresa - Esquema inicial para Supabase (PostgreSQL)
+-- SmartTransPro - Esquema inicial para Supabase (PostgreSQL)
 --
--- Aplicación:  Control Empresa (Transportes Fierro)
+-- Aplicación:  SmartTransPro (Transportes Fierro)
 -- Ejecutar en: Supabase > SQL Editor > New query > Run
 --
 -- Este script es idempotente: se puede volver a ejecutar sin romper nada.

@@ -156,6 +156,18 @@ function traducirBooleanos(sql) {
   return salida;
 }
 
+// Agrupa fechas por mes, que en cada motor se escribe distinto:
+//   SQLite      -> substr(fecha,1,7)          (la fecha ya es texto)
+//   PostgreSQL  -> to_char(fecha,'YYYY-MM')    (la fecha es de tipo date)
+// Se detecta el patrón "substr(cast(<col> as text|varchar|char),1,7)", que es
+// como el código pide el mes, y se reemplaza por to_char. Fuera de ese patrón
+// substr/cast se dejan igual: pueden ser un substring normal de un texto.
+const RE_MES_POSTGRES = /\bsubstr\(\s*cast\(\s*([A-Za-z_][A-Za-z0-9_.]*)\s+as\s+(?:text|varchar|char)\s*\)\s*,\s*1\s*,\s*7\s*\)/gi;
+
+function traducirMes(sql) {
+  return sql.replace(RE_MES_POSTGRES, "to_char($1,'YYYY-MM')");
+}
+
 /**
  * Traduce una consulta de SQLite a PostgreSQL.
  * @param {string} sql
@@ -166,7 +178,7 @@ function traducir(sql, parametros = null) {
   for (const { patron, motivo } of NO_SOPORTADOS) {
     if (patron.test(sql)) throw new ErrorTraduccion(motivo, sql);
   }
-  let salida = traducirLike(traducirDate(sql));
+  let salida = traducirMes(traducirLike(traducirDate(sql)));
   const resultado = traducirParametros(salida, parametros);
   return { sql: traducirBooleanos(resultado.sql), valores: resultado.valores };
 }

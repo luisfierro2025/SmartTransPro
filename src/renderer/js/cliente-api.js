@@ -13,7 +13,7 @@
   // Cada acción declara su canal real (el nombre de la base de datos).
   const GRUPOS = {
     app: { info: 'app:info' },
-    dashboard: { resumen: 'dashboard:resumen' },
+    dashboard: { resumen: 'dashboard:resumen', tablero: 'dashboard:tablero' },
     configuracion: { obtener: 'configuracion:obtener', guardar: 'configuracion:guardar' },
     reportes: { egresos: 'reportes:egresos', combustible: 'reportes:combustible' },
     bitacora: {
@@ -39,6 +39,7 @@
     finanzas: { categorias: 'finanzas:categorias' },
     viaticos: {
       listar: 'viaticos:listar',
+      viajes_disponibles: 'viaticos:viajes_disponibles',
       guardar: 'viaticos:guardar',
       liquidar: 'viaticos:liquidar',
       eliminar: 'viaticos:eliminar',
@@ -75,6 +76,7 @@
       cambiarClave: 'usuarios:cambiar_clave',
       restablecerClave: 'usuarios:restablecer_clave'
     },
+    monitoreo: { listar: 'monitoreo:listar', vincular: 'monitoreo:vincular', desvincular: 'monitoreo:desvincular', historial: 'monitoreo:historial' },
     sistema: {
       info: 'sistema:info',
       datosEjemplo: 'sistema:datos_ejemplo',
