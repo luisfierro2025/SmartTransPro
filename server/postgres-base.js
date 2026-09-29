@@ -51,6 +51,16 @@ let clienteEnTransaccion = null;
 function obtenerPool() {
   if (pool) return pool;
   const connectionString = process.env.DATABASE_URL;
+
+try {
+  const u = new URL(connectionString);
+  console.log('[postgres] Host:', u.hostname);
+  console.log('[postgres] Puerto:', u.port);
+  console.log('[postgres] Base:', u.pathname);
+} catch (e) {
+  console.error('[postgres] DATABASE_URL no es una URL válida:', e.message);
+}
+
   if (!connectionString) {
     throw new Error('Falta la variable de entorno DATABASE_URL (cadena de conexión de Supabase).');
   }
