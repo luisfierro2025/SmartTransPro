@@ -26,3 +26,70 @@ __pycache__/
 # Respaldos de la base de la nube: contienen datos REALES del negocio, nunca se suben
 respaldos/
 
+
+# Configuracion local de licencias: nunca subir archivos reales
+licencia-config.json
+**/licencia-config.json
+src/renderer/licencia-config.json
+
+# Archivos temporales y diagnosticos locales
+/_*.cjs
+/_*.mjs
+/_*.ps1
+/_*.png
+/_*.txt
+/_shots/
+/_dash-shots/
+/tmp*
+/diagnostico.txt
+/tools/_*
+/tools/test-*
+/tools/probar-*
+/tools/verificar-*
+/tools/diagnosticar-*
+/tools/bytes-*
+/tools/mostrar-*
+/tools/inspect-*
+/tools/limpiar-*
+/tools/arreglar-*
+/tools/corregir-*
+/tools/reparar-*
+/tools/hallar-*
+/tools/buscar-original*
+/tools/cruzar-original*
+/tools/inyectar-*
+/tools/tematizar-*
+/tools/restablecer-*
+/tools/reubicar-*
+
+# Archivos de respaldo adicionales
+*.backup
+*.bak-*
+
+# Nunca publicar respaldos con datos del negocio
+respaldos/
+datos/
+
+# Configuracion real de licencias
+licencia-config.json
+**/licencia-config.json
+
+# Capturas de pruebas locales
+build/captura-instalada.png
+
+# Archivos temporales y respaldos HTML
+_index-original-respaldo.html
+src/renderer/_index-original-respaldo-usuarios.html
+src/renderer/_toc.html
+src/renderer/*.bak-*
+src/renderer/*.backup
+src/app.ts.backup
+
+# Salidas de compilacion TypeScript
+src/**/*.js.map
+src/**/*.d.ts.map
+
+# Registros y archivos temporales
+*.log
+
+types/*.map

@@ -6,6 +6,7 @@ const money=new Intl.NumberFormat('es-NI',{minimumFractionDigits:2,maximumFracti
 function actualizarBarraEstado(modulo){
   const el=document.getElementById('status-module');
   if(el) el.textContent=modulo||'Dashboard';
+  actualizarTicker();
 }
 
 function aplicarTema(){
@@ -26,10 +27,18 @@ function iniciarRelojEstado(){
   setInterval(pintar,1000);
 }
 
-function aplicarSidebarColapsado(){
-  const shell=document.querySelector('.app-shell');
-  const colapsado=localStorage.getItem('control-empresa-sidebar')==='colapsado';
-  if(shell) shell.classList.toggle('sidebar-colapsado',colapsado);
+// Texto informativo que se desplaza de derecha a izquierda en la barra inferior.
+// Solo se vuelve a dibujar cuando cambia algún dato, para no reiniciar la animación.
+function actualizarTicker(){
+  const pista=document.getElementById('tickerTrack'); if(!pista) return;
+  const t=id=>(document.getElementById(id)?.textContent||'').trim(),esc=v=>String(v).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  const usr=t('sidebarUsuarioNombre'),rol=t('sidebarUsuarioRol'),bd=t('db-status').replace(/^Base de datos:?\s*/i,'');
+  const fecha=new Intl.DateTimeFormat('es-NI',{weekday:'long',day:'numeric',month:'long',year:'numeric'}).format(new Date());
+  const items=[['Empresa',t('empresaDestacada')],['Usuario',usr&&usr!=='Sin sesión'?(rol?`${usr} · ${rol}`:usr):''],['Módulo activo',t('status-module')],['Base de datos',bd],['Hoy',fecha],['Consejo','Los buscadores filtran mientras escribe'],['Consejo','Imprima lo filtrado desde la barra de herramientas de cada módulo']].filter(i=>i[1]);
+  const firma=JSON.stringify(items); if(pista.dataset.firma===firma) return; pista.dataset.firma=firma;
+  const grupo=items.map(([k,v])=>`<span class="ticker-item"><b>${esc(k)}</b><span>${esc(v)}</span></span>`).join('');
+  pista.innerHTML=`<div class="ticker-grupo">${grupo}</div><div class="ticker-grupo" aria-hidden="true">${grupo}</div>`;
+  pista.style.setProperty('--ticker-dur',`${Math.max(25,Math.round(pista.firstElementChild.offsetWidth/55))}s`);
 }
 
 function inicializarInterfaz(){
@@ -39,18 +48,14 @@ function inicializarInterfaz(){
     localStorage.setItem('control-empresa-tema',siguiente);
     aplicarTema();
   });
-  aplicarSidebarColapsado();
-  document.getElementById('sidebarToggle')?.addEventListener('click',()=>{
-    const shell=document.querySelector('.app-shell');
-    const colapsadoAhora=!shell.classList.contains('sidebar-colapsado');
-    shell.classList.toggle('sidebar-colapsado',colapsadoAhora);
-    localStorage.setItem('control-empresa-sidebar',colapsadoAhora?'colapsado':'expandido');
-  });
-  // Para que, al plegar, cada botón siga identificándose con un tooltip.
+  // Con el menú compacto, cada botón se identifica con un tooltip.
   document.querySelectorAll('.menu-item').forEach(b=>{
     if(!b.title) b.title=b.querySelector('span')?.textContent.trim()||'';
   });
   iniciarRelojEstado();
+  actualizarTicker();
+  setInterval(actualizarTicker,4000);
+  iniciarMejorasVisuales();
 }
 
 // Datos de la empresa y moneda: se leen de la tabla "configuracion" de la base de datos.
@@ -133,6 +138,7 @@ async function aplicarConfiguracionEmpresa(){
     if(dbStatus) dbStatus.textContent='Base de datos conectada';
     const topStatus=document.getElementById('top-status-text');
     if(topStatus) topStatus.textContent='Sistema operativo';
+    actualizarTicker();
   }catch(e){
     console.error('No se pudo leer la configuración de la base de datos:',e);
     const dbStatus=document.getElementById('db-status');
@@ -173,7 +179,7 @@ async function abrir(n){
   pageTitle.textContent=m[0];
   actualizarBarraEstado(m[0]);
   // Cada cambio de módulo inicia en la parte superior del área de trabajo.
-  // El encabezado, sidebar y barra de estado permanecen fijos.
+  // El menú, el encabezado y la barra de estado permanecen fijos.
   if(content) content.scrollTop=0;
   await m[1]();
   // Activa búsqueda inteligente (filtra mientras se escribe) e impresión

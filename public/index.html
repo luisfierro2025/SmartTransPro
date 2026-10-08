@@ -1,0 +1,315 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="description" content="Plataforma central de licenciamiento de ALIS Software: productos, clientes, licencias y activaciones.">
+  <meta name="color-scheme" content="light">
+  <title>Alis Software Licensing &middot; Centro de control</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%234f46e5'/%3E%3Ctext x='16' y='23' font-family='Segoe UI,Arial' font-size='17' font-weight='700' fill='white' text-anchor='middle'%3EA%3C/text%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div class="app">
+
+    <!-- ============================= SIDEBAR ============================= -->
+    <aside class="sidebar" id="sidebar">
+      <div class="brand">
+        <div class="brand__mark">A</div>
+        <div class="brand__text">
+          <strong>ALIS Software</strong>
+          <span>Licensing Suite</span>
+        </div>
+      </div>
+
+      <nav class="nav" aria-label="Navegacion principal">
+        <p class="nav__label">Operacion</p>
+        <a class="nav__item is-active" href="#licencias" data-section="licencias">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v14H4z"/><path d="M4 10h16"/><path d="M9 15h6"/></svg>
+          Licencias
+        </a>
+        <a class="nav__item" href="#clientes" data-section="clientes">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="3.2"/><path d="M5 20c0-3.6 3.1-5.5 7-5.5s7 1.9 7 5.5"/></svg>
+          Clientes
+        </a>
+        <a class="nav__item" href="#activaciones" data-section="activaciones">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="11" rx="2"/><path d="M8 20h8"/></svg>
+          Activaciones
+        </a>
+
+        <p class="nav__label">Catalogo</p>
+        <a class="nav__item" href="#productos" data-section="productos">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9L12 3z"/><path d="M12 12l8-4.5M12 12v9M12 12L4 7.5"/></svg>
+          Productos
+        </a>
+        <a class="nav__item" href="#auditoria" data-section="auditoria">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h14v16H5z"/><path d="M8 9h8M8 13h8M8 17h5"/></svg>
+          Auditoria
+        </a>
+      </nav>
+
+      <div class="sidebar__foot">
+        <div class="nav__item nav__item--static" id="navEstado">
+          <i class="dot dot--idle" id="navDot"></i>
+          <span id="navEstadoTexto">Conectando...</span>
+        </div>
+        <p class="sidebar__version" id="navVersion">Alis Licensing</p>
+      </div>
+    </aside>
+    <!-- ============================== MAIN ============================== -->
+    <div class="main">
+      <header class="topbar">
+        <div class="topbar__left">
+          <button class="icon-btn only-mobile" id="btnMenu" aria-label="Abrir menu">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+          </button>
+          <div>
+            <h1 class="topbar__title" id="pageTitle">Centro de Licencias</h1>
+            <p class="topbar__subtitle" id="pageSubtitle">Administracion de productos, clientes, licencias y activaciones</p>
+          </div>
+        </div>
+
+        <div class="topbar__right">
+          <div class="key-field">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="8" cy="12" r="3.5"/><path d="M11.5 12H21M18 12v3M15 12v2"/></svg>
+            <input id="adminKey" type="password" placeholder="Clave de administrador"
+                   autocomplete="off" spellcheck="false" aria-label="Clave de administrador">
+            <button class="key-field__toggle" id="btnVerClave" type="button" aria-label="Mostrar u ocultar clave">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.8-6 10-6 10 6 10 6-3.8 6-10 6-10-6-10-6z"/><circle cx="12" cy="12" r="2.6"/></svg>
+            </button>
+          </div>
+          <button class="btn btn--ghost" id="btnRefrescar" type="button">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.6-5.9"/><path d="M20 4v4h-4"/></svg>
+            <span>Actualizar</span>
+          </button>
+          <button class="btn btn--primary" id="btnNuevaLicencia" type="button">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+            <span>Nueva licencia</span>
+          </button>
+        </div>
+      </header>
+
+      <main class="content" id="content">
+
+        <div class="view" id="v-licencias">
+        <!-- =============================== KPIs =============================== -->
+        <section class="kpis" aria-label="Indicadores">
+          <article class="kpi">
+            <div class="kpi__top">
+              <span class="kpi__label">Licencias</span>
+              <span class="kpi__icon kpi__icon--brand">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v14H4z"/><path d="M4 10h16"/><path d="M9 15h6"/></svg>
+              </span>
+            </div>
+            <strong class="kpi__value" id="totalLicencias">&mdash;</strong>
+            <span class="kpi__hint" id="hintLicencias">Cargando metricas...</span>
+          </article>
+
+          <article class="kpi">
+            <div class="kpi__top">
+              <span class="kpi__label">Equipos activos</span>
+              <span class="kpi__icon kpi__icon--info">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="11" rx="2"/><path d="M8 20h8"/></svg>
+              </span>
+            </div>
+            <strong class="kpi__value" id="totalEquipos">&mdash;</strong>
+            <span class="kpi__hint" id="hintEquipos">&mdash;</span>
+          </article>
+
+          <article class="kpi">
+            <div class="kpi__top">
+              <span class="kpi__label">Clientes</span>
+              <span class="kpi__icon kpi__icon--violet">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="3.2"/><path d="M5 20c0-3.6 3.1-5.5 7-5.5s7 1.9 7 5.5"/></svg>
+              </span>
+            </div>
+            <strong class="kpi__value" id="totalClientes">&mdash;</strong>
+            <span class="kpi__hint" id="hintClientes">&mdash;</span>
+          </article>
+
+          <article class="kpi">
+            <div class="kpi__top">
+              <span class="kpi__label">Productos</span>
+              <span class="kpi__icon kpi__icon--warn">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9L12 3z"/><path d="M12 12l8-4.5M12 12v9M12 12L4 7.5"/></svg>
+              </span>
+            </div>
+            <strong class="kpi__value" id="totalProductos">&mdash;</strong>
+            <span class="kpi__hint" id="hintProductos">&mdash;</span>
+          </article>
+        </section>
+        <!-- ============================= PANEL ============================= -->
+        <section class="panel" id="licencias">
+          <div class="panel__head">
+            <div>
+              <h2>Licencias emitidas</h2>
+              <p class="panel__desc">Inventario completo con estado, vencimiento y consumo de equipos.</p>
+            </div>
+            <div class="panel__tools">
+              <div class="search">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6"/><path d="M20 20l-3.6-3.6"/></svg>
+                <input id="buscar" type="search" placeholder="Buscar codigo, cliente o producto..." aria-label="Buscar licencias">
+              </div>
+              <div class="seg" id="filtros" role="group" aria-label="Filtrar por estado">
+                <button class="seg__btn is-active" data-estado="TODOS" type="button">Todas</button>
+                <button class="seg__btn" data-estado="ACTIVA" type="button">Activas</button>
+                <button class="seg__btn" data-estado="SUSPENDIDA" type="button">Suspendidas</button>
+                <button class="seg__btn" data-estado="VENCIDA" type="button">Vencidas</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="table-wrap">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th class="sortable" data-col="codigo">Licencia</th>
+                  <th class="sortable" data-col="producto">Producto</th>
+                  <th class="sortable" data-col="cliente">Cliente</th>
+                  <th class="sortable" data-col="estado">Estado</th>
+                  <th class="sortable" data-col="fecha_vencimiento">Vencimiento</th>
+                  <th class="sortable" data-col="equipos">Equipos</th>
+                  <th class="th-actions">Acciones</th>
+                </tr>
+              </thead>
+              <tbody id="tabla"></tbody>
+            </table>
+          </div>
+
+          <div class="panel__foot">
+            <span id="resumenTabla">&mdash;</span>
+            <div class="legend">
+              <span><i class="swatch swatch--ok"></i>Activa</span>
+              <span><i class="swatch swatch--warn"></i>Suspendida</span>
+              <span><i class="swatch swatch--bad"></i>Vencida / Cancelada</span>
+            </div>
+          </div>
+        </section>
+        </div>
+
+      </main>
+    </div>
+  </div>
+  <!-- ======================= BARRA DE ESTADO INFERIOR ==================== -->
+  <footer class="statusbar" id="statusbar" role="status" aria-live="polite">
+    <div class="statusbar__group">
+      <span class="sb-item" id="sbConexion" title="Estado de la conexion con la API">
+        <i class="dot dot--idle"></i><span class="sb-label">Estado</span><b>Conectando...</b>
+      </span>
+      <span class="sb-sep"></span>
+      <span class="sb-item" id="sbBd" title="Estado de PostgreSQL">
+        <i class="dot dot--idle"></i><span class="sb-label">PostgreSQL</span><b>&mdash;</b>
+      </span>
+    </div>
+
+    <div class="statusbar__group statusbar__group--mid">
+      <span class="sb-item" title="Servicio en ejecucion">Alis Software Licensing</span>
+      <span class="sb-sep"></span>
+      <span class="sb-item">v<b id="sbVersion">&mdash;</b></span>
+      <span class="sb-sep"></span>
+      <span class="sb-item">Entorno <b id="sbEntorno">&mdash;</b></span>
+      <span class="sb-sep"></span>
+      <span class="sb-item">Uptime <b id="sbUptime">&mdash;</b></span>
+      <span class="sb-sep"></span>
+      <span class="sb-item">Peticiones <b id="sbPeticiones">0</b></span>
+      <span class="sb-sep"></span>
+      <span class="sb-item">Errores <b id="sbErrores">0</b></span>
+      <span class="sb-sep"></span>
+      <span class="sb-item">Latencia <b id="sbLatencia">&mdash;</b></span>
+      <span class="sb-sep"></span>
+      <span class="sb-item" title="Memoria resident del proceso Node">RAM <b id="sbMemoria">&mdash;</b></span>
+    </div>
+
+    <div class="statusbar__group statusbar__group--right">
+      <span class="sb-item">Auto-refresh <b id="sbRefresco">15s</b></span>
+      <span class="sb-sep"></span>
+      <span class="sb-item" id="sbFecha">&mdash;</span>
+      <span class="sb-sep"></span>
+      <span class="sb-item sb-clock" id="sbReloj">--:--:--</span>
+    </div>
+  </footer>
+
+  <!-- ============================= OVERLAYS ============================ -->
+  <div class="scrim" id="scrim" hidden></div>
+
+  <aside class="drawer" id="drawer" aria-hidden="true" aria-label="Detalle de licencia">
+    <header class="drawer__head">
+      <div>
+        <p class="drawer__eyebrow">Detalle de licencia</p>
+        <h3 id="drawerCodigo">&mdash;</h3>
+      </div>
+      <button class="icon-btn" id="btnCerrarDrawer" aria-label="Cerrar detalle">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </header>
+    <div class="drawer__body" id="drawerBody"></div>
+  </aside>
+
+  <div class="modal" id="modalNueva" role="dialog" aria-modal="true" aria-labelledby="modalTitulo" hidden>
+    <div class="modal__box">
+      <header class="modal__head">
+        <h3 id="modalTitulo">Emitir nueva licencia</h3>
+        <button class="icon-btn" id="btnCerrarModal" aria-label="Cerrar">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+        </button>
+      </header>
+      <form class="modal__body" id="formLicencia">
+        <label class="field">
+          <span>Producto</span>
+          <select id="mProducto" required></select>
+        </label>
+        <label class="field">
+          <span>Cliente</span>
+          <select id="mCliente" required></select>
+        </label>
+        <div class="field-row">
+          <label class="field">
+            <span>Tipo</span>
+            <select id="mTipo">
+              <option value="ANUAL">Anual</option>
+              <option value="MENSUAL">Mensual</option>
+              <option value="TRIMESTRAL">Trimestral</option>
+              <option value="PERPETUA">Perpetua</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Max. equipos</span>
+            <input id="mEquipos" type="number" min="1" value="1" required>
+          </label>
+        </div>
+        <label class="field">
+          <span>Vencimiento <em>(opcional)</em></span>
+          <input id="mVence" type="date">
+        </label>
+        <p class="modal__error" id="modalError" hidden></p>
+        <footer class="modal__foot">
+          <button type="button" class="btn btn--ghost" id="btnCancelarModal">Cancelar</button>
+          <button type="submit" class="btn btn--primary" id="btnGuardarLicencia">Emitir licencia</button>
+        </footer>
+      </form>
+    </div>
+  </div>
+
+  <div class="modal" id="modalForm" role="dialog" aria-modal="true" aria-labelledby="mfTitulo" hidden>
+    <div class="modal__box">
+      <header class="modal__head">
+        <h3 id="mfTitulo">&mdash;</h3>
+        <button class="icon-btn" id="mfCerrar" type="button" aria-label="Cerrar"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+      </header>
+      <form class="modal__body" id="mfForm">
+        <div id="mfCampos"></div>
+        <p class="modal__error" id="mfError" hidden></p>
+        <footer class="modal__foot">
+          <button type="button" class="btn btn--ghost" id="mfCancelar">Cancelar</button>
+          <button type="submit" class="btn btn--primary" id="mfGuardar">Guardar</button>
+        </footer>
+      </form>
+    </div>
+  </div>
+
+  <div class="toasts" id="toasts" aria-live="polite" aria-atomic="true"></div>
+
+  <script src="/app.js"></script>
+  <script src="/modulos.js"></script>
+</body>
+</html>

@@ -8,11 +8,8 @@
 </head>
 <body>
   <div class="app-shell">
-    <aside class="sidebar">
-      <button id="sidebarToggle" class="sidebar-toggle" type="button" title="Plegar/expandir menú" aria-label="Plegar/expandir menú">
-        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
-      </button>
-      <div class="brand">
+    <nav class="navbar" aria-label="Menú principal">
+      <div class="nav-brand">
         <div class="brand-mark">
           <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 16V7a1 1 0 0 1 1-1h9v10"/><path d="M13 10h4l3 3v3h-2"/><circle cx="7.5" cy="17.5" r="1.7"/><circle cx="16.5" cy="17.5" r="1.7"/></svg>
         </div>
@@ -21,7 +18,7 @@
           <span>Gestión de Transporte</span>
         </div>
       </div>
-      <nav class="menu">
+      <div class="menu">
         <button class="menu-item active" data-module="dashboard">
           <svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>
           <span>Dashboard</span>
@@ -62,24 +59,22 @@
           <svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 13.5a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1.04 1.56V19.6a2 2 0 1 1-4 0v-.09a1.7 1.7 0 0 0-1.04-1.56 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.7 1.7 0 0 0 .34-1.87 1.7 1.7 0 0 0-1.56-1.04H2.4a2 2 0 1 1 0-4h.09A1.7 1.7 0 0 0 4.05 8.5a1.7 1.7 0 0 0-.34-1.87l-.06-.06A2 2 0 1 1 6.48 3.74l.06.06a1.7 1.7 0 0 0 1.87.34H8.5a1.7 1.7 0 0 0 1.04-1.56V2.4a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1.04 1.56 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87v.09c.24.68.82 1.2 1.56 1.36h.09a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.56 1.04Z"/></svg>
           <span>Configuración</span>
         </button>
-      </nav>
-      <div class="sidebar-sesion" id="sidebarSesion">
-        <div class="sidebar-avatar" id="sidebarAvatar">-</div>
-        <div class="sidebar-sesion-datos">
+      </div>
+      <div class="nav-user" id="sidebarSesion">
+        <div class="nav-avatar" id="sidebarAvatar">-</div>
+        <div class="nav-user-datos">
           <strong id="sidebarUsuarioNombre">Sin sesión</strong>
           <span id="sidebarUsuarioRol"></span>
         </div>
-        <button id="btnMiClave" class="sidebar-sesion-boton" type="button" title="Cambiar mi contraseña" aria-label="Cambiar mi contraseña">
+        <button id="btnMiClave" class="nav-btn" type="button" title="Cambiar mi contraseña" aria-label="Cambiar mi contraseña">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="10.5" width="16" height="10" rx="2"/><path d="M8 10.5V7.8a4 4 0 0 1 8 0v2.7"/></svg>
           <span>Clave</span>
         </button>
-        <button id="btnCerrarSesion" class="sidebar-sesion-boton salir" type="button" title="Cerrar sesión" aria-label="Cerrar sesión">
+        <button id="btnCerrarSesion" class="nav-btn salir" type="button" title="Cerrar sesión" aria-label="Cerrar sesión">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15 17.5v1.8a1.7 1.7 0 0 1-1.7 1.7H5.7A1.7 1.7 0 0 1 4 19.3V4.7A1.7 1.7 0 0 1 5.7 3h7.6a1.7 1.7 0 0 1 1.7 1.7v1.8"/><path d="M19.5 12H9.5"/><path d="M16.5 8.8 19.7 12l-3.2 3.2"/></svg>
           <span>Cerrar sesión</span>
         </button>
-      </div>
-      <div class="sidebar-footer">Sistema local</div>
-    </aside>
+      </div>    </nav>
     <main class="main">
       <header class="topbar">
         <div class="topbar-marca">
@@ -106,8 +101,10 @@
           <span class="statusbar-separator"></span>
           <span class="statusbar-item">Módulo: <strong id="status-module">Dashboard</strong></span>
         </div>
+        <div class="ticker" aria-label="Información del sistema"><div class="ticker-track" id="tickerTrack"></div></div>
         <div class="statusbar-right">
           <span class="statusbar-item" id="status-clock">--:--:--</span>
+          <span class="statusbar-separator"></span>
           <span class="statusbar-item">SmartTransPro v0.1.0</span>
         </div>
       </footer>

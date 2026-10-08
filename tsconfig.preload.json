@@ -1,0 +1,18 @@
+{
+  // El preload de Electron SIEMPRE debe ser CommonJS cuando sandbox: true,
+  // aunque el resto del proyecto sea ESM ("type": "module" en package.json).
+  // Se compila aparte para que `tsc` (build ESM del main) nunca lo sobrescriba.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "module": "commonjs",
+    "target": "esnext",
+    "sourceMap": false,
+    "declaration": false,
+    "declarationMap": false,
+    "verbatimModuleSyntax": false,
+    "isolatedModules": false,
+    "esModuleInterop": true
+  },
+  "include": ["src/preload.ts"],
+  "exclude": ["node_modules"]
+}

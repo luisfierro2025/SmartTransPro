@@ -27,14 +27,18 @@ function activarBusquedaInteligenteYImpresion(raiz) {
     const botonBuscar = barra.querySelector('button[id^="btnFiltrar"], button[id^="btnBuscar"]');
     if (!botonBuscar) return;
 
-    // 1) Filtrado en vivo mientras se escribe.
-    const campoTexto = barra.querySelector(
-      'input[type="text"]:not([data-live-armado]), input[type="search"]:not([data-live-armado])'
-    );
-    if (campoTexto) {
-      campoTexto.setAttribute('data-live-armado', '1');
-      const dispararBusqueda = debounce(() => botonBuscar.click(), 400);
-      campoTexto.addEventListener('input', dispararBusqueda);
+    // 1) Búsqueda inteligente: cualquier campo de la barra (texto, selectores,
+    //    fechas) dispara la consulta solo, sin pulsar "Buscar". El botón sigue
+    //    existiendo (otros módulos lo invocan), pero queda oculto.
+    if (!barra.hasAttribute('data-busqueda-viva')) {
+      barra.setAttribute('data-busqueda-viva', '1');
+      const lanzar = debounce(() => botonBuscar.click(), 250);
+      barra.querySelectorAll('input[type="text"], input[type="search"]').forEach(campo => {
+        campo.classList.add('input-busqueda'); campo.setAttribute('data-live-armado', '1');
+        campo.addEventListener('input', lanzar); campo.addEventListener('search', lanzar);
+      });
+      barra.querySelectorAll('select, input[type="date"], input[type="month"], input[type="number"]').forEach(c => c.addEventListener('change', lanzar));
+      botonBuscar.classList.add('btn-busqueda-auto');
     }
 
     // 2) Botón de impresión de lo filtrado, si esta barra aún no tiene uno.
@@ -61,6 +65,37 @@ function activarBusquedaInteligenteYImpresion(raiz) {
     };
     (botonLimpiar || botonBuscar).insertAdjacentElement('afterend', botonImprimir);
   });
+}
+
+// Alinea a la derecha (con cifras tabulares) las columnas donde TODAS las celdas
+// con contenido son números, montos, kilómetros o porcentajes. Solo cambia clases.
+const _RX_NUMERICO = /^[-+(]?\s*(?:[A-Za-z$€£]{1,3}\s*)?[-+]?(?:\d{1,7}|\d{1,3}(?:,\d{3})+)(?:\.\d+)?\s*(?:km|kms|%|l|gal|lts?)?\)?$/i;
+function alinearColumnasNumericas(raiz) {
+  (raiz || document).querySelectorAll('table:not(.ficha-datos)').forEach(t => {
+    const cab = t.tHead && t.tHead.rows[0]; if (!cab) return;
+    const cols = cab.cells.length, filas = [...t.tBodies].flatMap(b => [...b.rows]);
+    if (!cols || !filas.length) return;
+    for (let c = 0; c < cols; c++) {
+      let n = 0, ok = true;
+      for (const f of filas) {
+        if (f.cells.length !== cols) { ok = false; break; }
+        const tx = f.cells[c].textContent.trim();
+        if (!tx || tx === '-' || tx === '—') continue;
+        if (_RX_NUMERICO.test(tx)) n++; else { ok = false; break; }
+      }
+      const num = ok && n > 0;
+      cab.cells[c].classList.toggle('num', num); filas.forEach(f => f.cells[c].classList.toggle('num', num));
+    }
+  });
+}
+
+// Observa el área de trabajo: cada vez que un módulo (o una pestaña) dibuja
+// contenido nuevo, se arma la búsqueda automática y se alinean las columnas.
+function iniciarMejorasVisuales() {
+  const c = document.getElementById('content'); if (!c) return;
+  let pendiente = 0;
+  const pasada = () => { pendiente = 0; activarBusquedaInteligenteYImpresion(c); alinearColumnasNumericas(c); };
+  new MutationObserver(() => { if (!pendiente) pendiente = requestAnimationFrame(pasada); }).observe(c, { childList: true, subtree: true });
 }
 
 // Construye una línea legible con los filtros activos de una barra de
