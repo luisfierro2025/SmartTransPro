@@ -90,6 +90,37 @@ ipcMain.handle('bitacora:obtener', async (_,id)=>{
            WHERE b.id=@id`).get({id:Number(id)});
 });
 
+ipcMain.handle('bitacora:documentos:guardar', async (_, datos={})=>{
+  const id = Number(datos.id);
+  if (!Number.isSafeInteger(id) || id <= 0) throw new Error('El viaje indicado no es válido.');
+  if (!Array.isArray(datos.documentos) || datos.documentos.length !== 3) {
+    throw new Error('Se deben enviar los tres espacios de documentos del viaje.');
+  }
+
+  const valores = [];
+  let pesoTotal = 0;
+  for (let i = 0; i < 3; i++) {
+    const documento = datos.documentos[i] || {};
+    const nombre = String(documento.nombre || '').trim().slice(0, 80);
+    const imagen = documento.imagen || null;
+    if (imagen !== null && (typeof imagen !== 'string' || !/^data:image\/(?:jpeg|png|webp|gif);base64,[a-z0-9+/]+=*$/i.test(imagen))) {
+      throw new Error(`El documento ${i + 1} no contiene una imagen válida.`);
+    }
+    pesoTotal += imagen ? imagen.length : 0;
+    valores.push(imagen ? nombre || `Documento ${i + 1}` : null, imagen);
+  }
+  if (pesoTotal > 1800000) throw new Error('Las imágenes superan el tamaño máximo permitido.');
+
+  const db = obtenerDB();
+  const resultado = await db.prepare(`UPDATE bitacora_viajes SET
+    documento_viaje_1_nombre=?, documento_viaje_1=?,
+    documento_viaje_2_nombre=?, documento_viaje_2=?,
+    documento_viaje_3_nombre=?, documento_viaje_3=?
+    WHERE id=?`).run(...valores, id);
+  if (!resultado.changes) throw new Error('No se encontró el viaje indicado.');
+  return { ok: true, id };
+});
+
 ipcMain.handle('bitacora:eliminar', async (_,id)=>{
   const db=obtenerDB();
   await db.prepare('DELETE FROM bitacora_viajes WHERE id=?').run(id);

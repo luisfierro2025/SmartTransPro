@@ -1,0 +1,74 @@
+SmartPosPro — revisión y pulido
+Fecha: 2026-09-22
+
+- Comprobante: Código, Cantidad, Descripción, Precio unitario e Importe.
+- Cantidades e importes se toman de los datos reales de cada detalle.
+- Productos comunes aparecen como COMÚN.
+- Productos del catálogo reciben código interno automático PRD-00001, etc.
+- Ticket optimizado para impresión térmica de 80 mm.
+- Configuración: segundo tema claro Ejecutivo / Pizarra.
+- Tema persistido en SQLite y aplicado al iniciar.
+- Moneda de Configuración se carga también en Ventas.
+- Impuesto de Configuración queda como valor predeterminado en Compras.
+- Stock mínimo configurado se utiliza en el stock crítico.
+- Respaldo de base de datos disponible directamente desde Configuración.
+- Control de cambios sin guardar mejorado.
+
+No se incluyen .env ni .env.bak. Usa .env.example como referencia.
+No se incluyen cachés, node_modules, capturas, logs ni el ZIP SPP8.
+
+Verificación:
+- node --check pasó para los JavaScript modificados.
+- La consulta de detalles del comprobante fue verificada contra pos.db.
+- npm run build no pudo completarse en este entorno porque faltan los tipos de Node/dependencias completas en node_modules. Ejecuta npm ci y luego npm run build en tu equipo.
+
+TEMA OSCURO · CÓDIGO
+- Agregado un tercer tema de interfaz: “Código · oscuro”.
+- Paleta inspirada en editores de código modernos: fondo #0d1117, superficies oscuras, bordes discretos y acento azul técnico.
+- Adaptados barra superior, paneles, formularios, tablas, botones, navegación lateral, configuración, indicadores y barras de estado.
+- El tema se guarda en la configuración existente y se reaplica automáticamente al iniciar.
+- El selector de Configuración ahora ofrece Corporativo, Ejecutivo y Código.
+
+
+CORRECCIÓN POSTERIOR DEL COMPROBANTE 80 MM
+- Se rediseñó el detalle del ticket para evitar el amontonamiento de cinco columnas.
+- Cada artículo muestra código y descripción en bloque, seguido de cantidad, precio unitario e importe.
+- Se amplió el área útil del papel térmico de 80 mm y se ajustaron tipografías y anchos.
+- Se mantiene el código de producto y el cálculo real de cantidad, precio e importe.
+
+
+IMPRESIÓN PROFESIONAL DEL COMPROBANTE (80 mm / 58 mm / A4 / PDF)
+Problema: el botón “Imprimir recibo” llamaba a window.print(), que imprimía la
+ventana completa con el diseño web y sin controlar el tamaño del papel.
+
+Solución: la impresión pasa por el proceso principal y el ticket se envía a la
+impresora con el tamaño de papel exacto (medido en micras), o se exporta a PDF.
+
+- Nuevo módulo src/impresion/impresion.ts → listarImpresoras(), imprimirTicket()
+  y guardarComprobantePDF(), con el documento de impresión del comprobante.
+- El documento de impresión es solo el ticket: toma el mismo HTML del recibo y
+  la hoja de estilos style.css (sin @import de fuentes web, para imprimir sin
+  conexión) y fija el ancho real del papel (.factura-80) y @page.
+- El alto del rollo se mide del contenido real del ticket, de modo que la
+  térmica corta exactamente lo necesario, sin partir el recibo en dos páginas.
+- Envío en tres pasos: tamaño a medida → papel predeterminado del controlador →
+  diálogo de impresión de Windows como último recurso. Se informa siempre el
+  motivo del fallo (impresora apagada, sin papel, etc.).
+- Nuevo panel “Imprimir comprobante” (index.html + style.css) para elegir
+  impresora, papel (80 mm, 58 mm, A4), copias y envío directo sin diálogo.
+  Las preferencias se recuerdan en el equipo, por lo que las siguientes ventas
+  imprimen en un solo paso desde el aviso posterior al cobro.
+- El comprobante ahora tiene los botones “Guardar PDF” e “Imprimir ticket”; el
+  PDF se guarda con el mismo tamaño de papel del ticket (80 mm continuo).
+- Preload: api.listarImpresoras(), api.imprimirTicket() y api.guardarTicketPDF().
+- app.ts registra los canales impresion:listar-impresoras, impresion:imprimir-ticket
+  e impresion:guardar-pdf.
+- Ya no se usa window.print(): la impresión funciona aunque la interfaz cambie de
+  vista y respeta el diseño de 80 mm mostrado en pantalla.
+
+Verificación de esta corrección:
+- npm run build (main + preload) sin errores y node --check sobre renderer.js.
+- _impresion-verif.cjs: 38 comprobaciones en PASS (PDF reales de 80 mm, 58 mm y
+  A4 con el tamaño de hoja verificado en el PDF; panel de impresión; envío
+  directo; fallo del controlador y reintento con el diálogo de Windows).
+- La aplicación real arranca sin errores con los nuevos canales IPC.

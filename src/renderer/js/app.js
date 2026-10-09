@@ -633,6 +633,7 @@ async function renderBitacora(){
                   </td>
                   <td style="text-align:right">
                     <div class="action-buttons" style="justify-content:flex-end; gap:4px;">
+                      <button class="btn btn-sm btn-secondary btnDocsViaje" data-id="${esc(v.id)}" type="button">Documentos (${[1, 2, 3].filter(n => v[`documento_viaje_${n}`]).length}/3)</button>
                       <button class="btn btn-sm btn-secondary btnEditar" data-id="${esc(v.id)}" type="button">Editar</button>
                       ${v.estado === 'EN CURSO' ? `<button class="btn btn-sm primary btnFinalizar" data-id="${esc(v.id)}" type="button">Fin</button>` : ''}
                       <button class="btn btn-sm btn-danger btnEliminar" data-id="${esc(v.id)}" type="button">✕</button>
@@ -644,6 +645,13 @@ async function renderBitacora(){
           </tbody>
         </table>
       `;
+
+      document.querySelectorAll('.btnDocsViaje').forEach(btn => {
+        btn.onclick = () => {
+          const item = viajes.find(x => String(x.id) === String(btn.dataset.id));
+          if (item) abrirModalDocumentos(item);
+        };
+      });
 
       document.querySelectorAll('.btnEditar').forEach(btn => {
         btn.onclick = () => {
@@ -682,6 +690,254 @@ async function renderBitacora(){
 
   function cerrarModal(){
     modalContainer.innerHTML = '';
+  }
+
+  function abrirModalDocumentos(item){
+    const documentos = [1, 2, 3].map(numero => ({
+      nombre: item[`documento_viaje_${numero}_nombre`] || '',
+      imagen: item[`documento_viaje_${numero}`] || null
+    }));
+    const avisoId = 'avisoDocumentosViaje';
+    const pintarImagen = (documento, numero) => documento.imagen
+      ? `<img src="${esc(documento.imagen)}" class="doc-thumb" alt="Documento ${numero} del viaje">`
+      : '<span class="doc-vacio"><strong>Sin imagen</strong><span class="doc-pista">JPG o PNG</span></span>';
+
+    modalContainer.innerHTML = `
+      <div class="modal-overlay">
+        <div class="modal-box" style="max-width:850px;">
+          <div class="modal-header">
+            <h3>Documentos del Viaje #${esc(item.id)}</h3>
+            <button class="modal-close" id="btnCerrarDocsViaje" type="button">&times;</button>
+          </div>
+          <p style="margin:0 0 14px;color:var(--muted);font-size:13px;">
+            ${esc(item.fecha || '')} · ${esc(item.lugar_salida || item.origen || 'Origen')} → ${esc(item.destino || '')}
+          </p>
+          <div class="form-row" style="grid-template-columns:repeat(3,minmax(0,1fr));">
+            ${documentos.map((documento, indice) => {
+              const numero = indice + 1;
+              return `<div class="form-group">
+                <label for="nombreDocumentoViaje${numero}">Documento ${numero}</label>
+                <input id="nombreDocumentoViaje${numero}" type="text" maxlength="80" placeholder="Ej. Recibido" value="${esc(documento.nombre)}">
+                <div class="doc-box doc-zona${documento.imagen ? ' doc-lleno' : ''}" id="imagenDocumentoViaje${numero}" role="button" tabindex="0" aria-label="Seleccionar imagen para documento ${numero}">
+                  ${pintarImagen(documento, numero)}
+                </div>
+                <input type="file" id="archivoDocumentoViaje${numero}" accept="image/*" class="doc-input">
+                <div class="doc-acciones">
+                  <label class="doc-btn" for="archivoDocumentoViaje${numero}">Seleccionar imagen</label>
+                  <button type="button" class="btn btn-sm btn-secondary" id="descargarDocumentoViaje${numero}"${documento.imagen ? '' : ' disabled'}>Descargar</button>
+                  <button type="button" class="btn btn-sm btn-danger" id="quitarDocumentoViaje${numero}"${documento.imagen ? '' : ' hidden'}>Quitar</button>
+                </div>
+              </div>`;
+            }).join('')}
+          </div>
+          <div class="aviso-error" id="${avisoId}" hidden></div>
+          <div class="modal-actions">
+            <button type="button" class="btn btn-secondary" id="descargarTodosDocsViaje"${documentos.some(d => d.imagen) ? '' : ' disabled'}>Descargar documentos</button>
+            <button type="button" class="btn" id="btnCancelarDocsViaje">Cancelar</button>
+            <button type="button" class="btn primary" id="btnGuardarDocsViaje">Guardar documentos</button>
+          </div>
+        </div>
+      </div>
+    `;
+
+    const aviso = document.getElementById(avisoId);
+    const mostrarAviso = texto => {
+      if (!aviso) return;
+      aviso.textContent = texto;
+      aviso.hidden = false;
+    };
+    const leerImagen = archivo => new Promise((resolve, reject) => {
+      const lector = new FileReader();
+      lector.onload = () => resolve(lector.result);
+      lector.onerror = () => reject(new Error('No se pudo leer el archivo.'));
+      lector.readAsDataURL(archivo);
+    });
+    const comprimirImagen = dataUrl => new Promise((resolve, reject) => {
+      const imagen = new Image();
+      imagen.onerror = () => reject(new Error('No se pudo procesar la imagen.'));
+      imagen.onload = () => {
+        const ancho = imagen.naturalWidth || imagen.width;
+        const alto = imagen.naturalHeight || imagen.height;
+        if (!ancho || !alto) return reject(new Error('La imagen no tiene dimensiones válidas.'));
+        const escala = Math.min(1, 1000 / Math.max(ancho, alto));
+        const lienzo = document.createElement('canvas');
+        lienzo.width = Math.max(1, Math.round(ancho * escala));
+        lienzo.height = Math.max(1, Math.round(alto * escala));
+        const contexto = lienzo.getContext('2d');
+        if (!contexto) return reject(new Error('No se pudo preparar la imagen.'));
+        contexto.fillStyle = '#ffffff';
+        contexto.fillRect(0, 0, lienzo.width, lienzo.height);
+        contexto.drawImage(imagen, 0, 0, lienzo.width, lienzo.height);
+        const comprimida = lienzo.toDataURL('image/jpeg', 0.72);
+        resolve(comprimida.length < dataUrl.length ? comprimida : dataUrl);
+      };
+      imagen.src = dataUrl;
+    });
+    const actualizarVista = numero => {
+      const caja = document.getElementById(`imagenDocumentoViaje${numero}`);
+      if (!caja) return;
+      caja.innerHTML = pintarImagen(documentos[numero - 1], numero);
+      caja.classList.toggle('doc-lleno', Boolean(documentos[numero - 1].imagen));
+      const botonQuitar = document.getElementById(`quitarDocumentoViaje${numero}`);
+      if (botonQuitar) botonQuitar.hidden = !documentos[numero - 1].imagen;
+      const botonDescargar = document.getElementById(`descargarDocumentoViaje${numero}`);
+      if (botonDescargar) botonDescargar.disabled = !documentos[numero - 1].imagen;
+      document.getElementById('descargarTodosDocsViaje').disabled = !documentos.some(d => d.imagen);
+    };
+
+    let cargasPendientes = 0;
+    const botonGuardar = document.getElementById('btnGuardarDocsViaje');
+    const nombreArchivo = (documento, numero) => {
+      const etiqueta = documento.nombre.trim() || `documento-${numero}`;
+      return `viaje-${item.id}-${etiqueta}`.replace(/[<>:"/\\|?*\x00-\x1f]/g, '-').replace(/\s+/g, '-');
+    };
+    const mostrarResultadoDescarga = ({ error, mensaje, imagen, titulo }) => {
+      mostrarFichaImpresion({
+        estado: error ? 'error' : 'exito',
+        titulo,
+        subtitulo: error || mensaje,
+        documentoTitulo: titulo,
+        campos: [['Viaje', `#${item.id}`], ['Ruta', `${item.lugar_salida || item.origen || 'Origen'} → ${item.destino || ''}`]],
+        ...(imagen ? { miniatura: imagen } : {}),
+        boton: error ? 'Cerrar' : 'Entendido'
+      });
+    };
+    const descargarUno = async (documento, numero, boton) => {
+      if (!documento.imagen) return;
+      const textoOriginal = boton.textContent;
+      boton.disabled = true;
+      boton.textContent = 'Descargando...';
+      try {
+        const resultado = await descargarDocumento(documento.imagen, nombreArchivo(documento, numero));
+        if (resultado && resultado.ok === false && !resultado.cancelado) {
+          mostrarResultadoDescarga({
+            error: resultado.error || 'Ocurrió un problema al guardar el archivo.',
+            titulo: 'No se pudo descargar el documento'
+          });
+        } else if (resultado && resultado.ok) {
+          mostrarResultadoDescarga({
+            mensaje: 'El documento ya está en tu equipo.',
+            imagen: documento.imagen,
+            titulo: 'Documento descargado'
+          });
+        }
+      } catch (error) {
+        mostrarResultadoDescarga({ error: error.message, titulo: 'No se pudo descargar el documento' });
+      } finally {
+        boton.disabled = false;
+        boton.textContent = textoOriginal;
+      }
+    };
+    documentos.forEach((documento, indice) => {
+      const numero = indice + 1;
+      const input = document.getElementById(`archivoDocumentoViaje${numero}`);
+      const caja = document.getElementById(`imagenDocumentoViaje${numero}`);
+      document.getElementById(`nombreDocumentoViaje${numero}`).oninput = event => {
+        documento.nombre = event.target.value;
+      };
+      const seleccionarArchivo = async archivo => {
+        if (!archivo) return;
+        if (!/^image\/(?:jpeg|png|webp|gif)$/i.test(archivo.type || '')) {
+          mostrarAviso('Solo se admiten imágenes JPG, PNG, WEBP o GIF.');
+          input.value = '';
+          return;
+        }
+        cargasPendientes++;
+        botonGuardar.disabled = true;
+        try {
+          documento.imagen = await comprimirImagen(await leerImagen(archivo));
+          actualizarVista(numero);
+          if (aviso) aviso.hidden = true;
+        } catch (error) {
+          mostrarAviso(error.message || 'No se pudo cargar la imagen.');
+        } finally {
+          input.value = '';
+          cargasPendientes--;
+          botonGuardar.disabled = cargasPendientes > 0;
+        }
+      };
+      input.onchange = event => seleccionarArchivo(event.target.files[0]);
+      document.getElementById(`quitarDocumentoViaje${numero}`).onclick = () => {
+        documento.imagen = null;
+        actualizarVista(numero);
+      };
+      document.getElementById(`descargarDocumentoViaje${numero}`).onclick = event =>
+        descargarUno(documento, numero, event.currentTarget);
+      caja.onclick = () => input.click();
+      caja.onkeydown = event => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          input.click();
+        }
+      };
+      caja.addEventListener('dragover', event => event.preventDefault());
+      caja.addEventListener('drop', event => {
+        event.preventDefault();
+        seleccionarArchivo(event.dataTransfer.files[0]);
+      });
+    });
+
+    document.getElementById('btnCerrarDocsViaje').onclick = cerrarModal;
+    document.getElementById('btnCancelarDocsViaje').onclick = cerrarModal;
+    document.getElementById('descargarTodosDocsViaje').onclick = async event => {
+      const boton = event.currentTarget;
+      const presentes = documentos
+        .map((documento, indice) => ({ documento, numero: indice + 1 }))
+        .filter(({ documento }) => documento.imagen);
+      if (!presentes.length) return;
+      const textoOriginal = boton.textContent;
+      boton.disabled = true;
+      boton.textContent = 'Descargando...';
+      try {
+        const resultado = await descargarDocumentos(
+          presentes.map(({ documento, numero }) => ({
+            nombre: nombreArchivo(documento, numero),
+            dataUrl: documento.imagen
+          })),
+          `Elegir carpeta para los documentos del viaje ${item.id}`
+        );
+        if (resultado && resultado.ok === false && !resultado.cancelado) {
+          mostrarResultadoDescarga({
+            error: resultado.error || 'Ocurrió un problema al guardar los archivos.',
+            titulo: 'No se pudieron descargar los documentos'
+          });
+        } else if (resultado && resultado.ok) {
+          mostrarResultadoDescarga({
+            mensaje: `Se descargaron ${presentes.length} documento(s).`,
+            titulo: 'Documentos descargados'
+          });
+        }
+      } catch (error) {
+        mostrarResultadoDescarga({ error: error.message, titulo: 'No se pudieron descargar los documentos' });
+      } finally {
+        boton.disabled = !documentos.some(d => d.imagen);
+        boton.textContent = textoOriginal;
+      }
+    };
+    botonGuardar.onclick = async () => {
+      const boton = botonGuardar;
+      const pesoTotal = documentos.reduce((total, documento) => total + (documento.imagen || '').length, 0);
+      if (pesoTotal > 1800000) {
+        mostrarAviso('Las imágenes ocupan demasiado espacio. Seleccione archivos más pequeños para guardar los tres documentos.');
+        return;
+      }
+      boton.disabled = true;
+      boton.textContent = 'Guardando...';
+      try {
+        const resultado = await window.api.bitacora.guardarDocumentos({
+          id: Number(item.id),
+          documentos
+        });
+        if (!resultado || resultado.ok !== true) throw new Error('La base de datos no confirmó el guardado.');
+        cerrarModal();
+        await cargarLista();
+      } catch (error) {
+        console.error('Error al guardar documentos del viaje:', error);
+        mostrarAviso(`No se pudieron guardar los documentos: ${error.message || 'Error desconocido.'}`);
+        boton.disabled = false;
+        boton.textContent = 'Guardar documentos';
+      }
+    };
   }
 
   function abrirModalForm(item = null){

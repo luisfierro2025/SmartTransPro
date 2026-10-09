@@ -44,7 +44,8 @@ if (types && typeof types.setTypeParser === 'function') {
 //   5 -> supabase/migrations/0005_usuarios_sesiones.sql (tablas usuarios y sesiones)
 //   6 -> supabase/migrations/0006_viaticos_viaje_unico.sql (un viático por viaje)
 //   7 -> supabase/migrations/0007_monitoreo_gps.sql (dispositivos_gps y posiciones_gps)
-const VERSION_ESQUEMA = 7;
+//   8 -> supabase/migrations/0008_documentos_viajes.sql (documentos de Bitácora)
+const VERSION_ESQUEMA = 8;
 let pool = null;
 let clienteEnTransaccion = null;
 
@@ -271,6 +272,12 @@ const COLUMNAS_AGREGADAS = [
   ['conductores', 'licencia_frontal', 'text'],
   ['conductores', 'licencia_trasera', 'text'],
   ['conductores', 'carnet_federacion', 'text'],
+  ['bitacora_viajes', 'documento_viaje_1_nombre', 'text'],
+  ['bitacora_viajes', 'documento_viaje_1', 'text'],
+  ['bitacora_viajes', 'documento_viaje_2_nombre', 'text'],
+  ['bitacora_viajes', 'documento_viaje_2', 'text'],
+  ['bitacora_viajes', 'documento_viaje_3_nombre', 'text'],
+  ['bitacora_viajes', 'documento_viaje_3', 'text'],
   // Logotipo de la empresa. Sin esta columna, "Guardar configuración" falla con
   // 42703: column "logo_empresa" of relation "configuracion" does not exist.
   ['configuracion', 'logo_empresa', "text not null default ''"]

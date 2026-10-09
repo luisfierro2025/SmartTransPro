@@ -1,0 +1,7 @@
+Archivos modificados: src/licencia/licencia.ts/.js, src/app.ts/.js, src/renderer/{index.html,usuarios.js,renderer.js,modulos.js}, package.json, .env.example, licencia-config.example.json (nuevo).
+Pendiente al aplicar: poner la URL del servidor (ALIS_LICENSING_URL o licencia-config.json) y ejecutar npm run build.
+
+[2026-10-02] Corrección pantalla en blanco tras el login:
+- src/licencia/licencia.ts/.js: la validación al iniciar distingue "servidor rechaza" de "servidor no disponible". Si no responde, se trabaja con la licencia local durante 7 días (período de gracia) en vez de bloquear; timeout 5 s; la consulta se cachea 10 min (la recarga tras el login ya no vuelve a llamar al servidor).
+- src/renderer/usuarios.js: si la licencia no es válida se mantiene la pantalla de activación con el motivo (nunca queda la app vacía).
+- CAUSA REAL de la pantalla en blanco: src/renderer/index.html tenia <div class="app" id="app" hidden> y nada le quitaba el atributo. Se quito el "hidden" (como estaba en index.html.bak-licencia-arranque) y usuarios.js (cerrarLogin) ahora tambien se asegura de quitarlo.

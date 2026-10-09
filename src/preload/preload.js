@@ -11,6 +11,7 @@ contextBridge.exposeInMainWorld('api',{
     listar:f=>ipcRenderer.invoke('bitacora:listar',f),
     obtener:id=>ipcRenderer.invoke('bitacora:obtener',id),
     guardar:d=>ipcRenderer.invoke('bitacora:guardar',d),
+    guardarDocumentos:d=>ipcRenderer.invoke('bitacora:documentos:guardar',d),
     eliminar:id=>ipcRenderer.invoke('bitacora:eliminar',id),
     resumen:()=>ipcRenderer.invoke('bitacora:resumen')
   },

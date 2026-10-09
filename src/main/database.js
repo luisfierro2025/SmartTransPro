@@ -235,6 +235,12 @@ CREATE TABLE IF NOT EXISTS bitacora_viajes(
   cliente TEXT,
   estado TEXT NOT NULL DEFAULT 'EN CURSO',
   observaciones TEXT,
+  documento_viaje_1_nombre TEXT,
+  documento_viaje_1 TEXT,
+  documento_viaje_2_nombre TEXT,
+  documento_viaje_2 TEXT,
+  documento_viaje_3_nombre TEXT,
+  documento_viaje_3 TEXT,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY(vehiculo_id) REFERENCES vehiculos(id),
   FOREIGN KEY(conductor_id) REFERENCES conductores(id),
@@ -352,6 +358,12 @@ function aplicarMigraciones() {
   asegurarColumna('bitacora_viajes', 'viatico', 'REAL NOT NULL DEFAULT 0');
   asegurarColumna('bitacora_viajes', 'estadia', 'REAL NOT NULL DEFAULT 0');
   asegurarColumna('bitacora_viajes', 'esteli', 'REAL NOT NULL DEFAULT 0');
+  asegurarColumna('bitacora_viajes', 'documento_viaje_1_nombre', 'TEXT');
+  asegurarColumna('bitacora_viajes', 'documento_viaje_1', 'TEXT');
+  asegurarColumna('bitacora_viajes', 'documento_viaje_2_nombre', 'TEXT');
+  asegurarColumna('bitacora_viajes', 'documento_viaje_2', 'TEXT');
+  asegurarColumna('bitacora_viajes', 'documento_viaje_3_nombre', 'TEXT');
+  asegurarColumna('bitacora_viajes', 'documento_viaje_3', 'TEXT');
   asegurarColumna('viaticos', 'conductor_id', 'INTEGER REFERENCES conductores(id)');
   asegurarColumna('viaticos', 'viaje_id', 'INTEGER REFERENCES bitacora_viajes(id)');
   asegurarColumna('conductores', 'numero_licencia', 'TEXT');

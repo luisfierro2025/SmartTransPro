@@ -271,6 +271,61 @@ async function ejecutar() {
       if (!modal) {
         errores.push('El modal "+ Registrar Viaje" no se abrió correctamente.');
       }
+
+      const documentos = await ventana.webContents.executeJavaScript(`
+        (async () => {
+          const viaje = await window.api.bitacora.guardar({
+            fecha: new Date().toISOString().slice(0, 10),
+            lugar_salida: 'Origen prueba documentos',
+            destino: 'Destino prueba documentos',
+            estado: 'COMPLETADO'
+          });
+          document.getElementById('btnFiltrar').click();
+          await new Promise(resolve => setTimeout(resolve, 500));
+          document.querySelector('.btnDocsViaje[data-id="' + viaje.id + '"]')?.click();
+          await new Promise(resolve => setTimeout(resolve, 200));
+          const modalAbierto = !!document.getElementById('btnGuardarDocsViaje');
+          const espacios = document.querySelectorAll('#modalViajeContainer input[type="file"]').length;
+          const descargasVaciasDeshabilitadas =
+            document.getElementById('descargarTodosDocsViaje')?.disabled === true &&
+            [...document.querySelectorAll('[id^="descargarDocumentoViaje"]')].every(boton => boton.disabled);
+          if (!modalAbierto || espacios !== 3) return { modalAbierto, espacios, guardado: false, descargasVaciasDeshabilitadas };
+
+          const canvas = document.createElement('canvas');
+          canvas.width = 2;
+          canvas.height = 2;
+          const datos = atob(canvas.toDataURL('image/png').split(',')[1]);
+          const bytes = Uint8Array.from(datos, caracter => caracter.charCodeAt(0));
+          const archivo = new File([bytes], 'recibido.png', { type: 'image/png' });
+          const transferencia = new DataTransfer();
+          transferencia.items.add(archivo);
+          const input = document.getElementById('archivoDocumentoViaje1');
+          Object.defineProperty(input, 'files', { configurable: true, value: transferencia.files });
+          input.dispatchEvent(new Event('change', { bubbles: true }));
+          await new Promise(resolve => setTimeout(resolve, 500));
+          const nombre = document.getElementById('nombreDocumentoViaje1');
+          nombre.value = 'Recibido';
+          nombre.dispatchEvent(new Event('input', { bubbles: true }));
+          const descargaIndividualHabilitada = !document.getElementById('descargarDocumentoViaje1').disabled;
+          const descargaMultipleHabilitada = !document.getElementById('descargarTodosDocsViaje').disabled;
+          document.getElementById('btnGuardarDocsViaje').click();
+          await new Promise(resolve => setTimeout(resolve, 700));
+          const guardado = await window.api.bitacora.obtener(viaje.id);
+          return {
+            modalAbierto, espacios,
+            descargasVaciasDeshabilitadas,
+            descargaIndividualHabilitada,
+            descargaMultipleHabilitada,
+            guardado: guardado.documento_viaje_1_nombre === 'Recibido' &&
+              /^data:image\\/(?:jpeg|png);base64,/.test(guardado.documento_viaje_1 || '') &&
+              !guardado.documento_viaje_2 && !guardado.documento_viaje_3
+          };
+        })()`);
+      if (!documentos.modalAbierto || documentos.espacios !== 3 || !documentos.guardado ||
+          !documentos.descargasVaciasDeshabilitadas || !documentos.descargaIndividualHabilitada ||
+          !documentos.descargaMultipleHabilitada) {
+        errores.push(`La ficha de documentos de Bitácora no guardó hasta tres espacios correctamente: ${JSON.stringify(documentos)}`);
+      }
     }
 
     // Planilla incluye la pestaña de Viáticos: se comprueba que el listado cargue,

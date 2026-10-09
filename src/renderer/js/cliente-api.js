@@ -20,6 +20,7 @@
       listar: 'bitacora:listar',
       obtener: 'bitacora:obtener',
       guardar: 'bitacora:guardar',
+      guardarDocumentos: 'bitacora:documentos:guardar',
       eliminar: 'bitacora:eliminar',
       resumen: 'bitacora:resumen'
     },

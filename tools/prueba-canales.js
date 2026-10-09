@@ -50,6 +50,7 @@ const TOKENS = { admin: '', sesion: '' };
 // Datos mínimos válidos por canal.
 const DATOS = {
   'bitacora:guardar': { fecha: '2026-09-25', origen: 'Managua', destino: 'Rivas', km_salida: 100, km_llegada: 180, hora_salida: '07:00', hora_llegada: '10:00', cliente: 'Cliente de prueba', estado: 'COMPLETADO' },
+  'bitacora:documentos:guardar': { id: 1, documentos: [{ nombre: 'Recibido', imagen: 'data:image/jpeg;base64,AA==' }, { nombre: '', imagen: null }, { nombre: '', imagen: null }] },
   'vehiculos:guardar': { codigo: 'V-99', placa: 'M 000-000', marca: 'Test', modelo: 'Test', anio: 2024, activo: 1 },
   'conductores:guardar': { nombre: 'Conductor de prueba', documento: '000-0000-0000A', activo: 1 },
   'clientes:guardar': { nombre: 'Cliente de prueba', identificacion: 'J0000000000000', activo: 1 },
@@ -102,6 +103,23 @@ async function ejecutar() {
   descartables['conductores:eliminar'] = await crear('conductores:guardar', { nombre: 'Temporal', activo: 1 });
   descartables['vehiculos:eliminar'] = await crear('vehiculos:guardar', { codigo: 'TMP-1', placa: 'TMP', activo: 1 });
   descartables['bitacora:eliminar'] = await crear('bitacora:guardar', DATOS['bitacora:guardar']);
+  DATOS['bitacora:documentos:guardar'].id = descartables['bitacora:eliminar'];
+  await ejecutarCanal('bitacora:documentos:guardar', DATOS['bitacora:documentos:guardar']);
+  const viajeConDocumentos = await ejecutarCanal('bitacora:obtener', descartables['bitacora:eliminar']);
+  verificar(
+    'Bitácora guarda y recupera los documentos del viaje',
+    viajeConDocumentos.documento_viaje_1_nombre === 'Recibido' &&
+      viajeConDocumentos.documento_viaje_1 === 'data:image/jpeg;base64,AA==' &&
+      viajeConDocumentos.documento_viaje_2 === null &&
+      viajeConDocumentos.documento_viaje_3 === null
+  );
+  verificar(
+    'Bitácora rechaza formatos que no son imágenes compatibles',
+    await esperaFallo('bitacora:documentos:guardar', {
+      id: descartables['bitacora:eliminar'],
+      documentos: [{ nombre: 'Archivo', imagen: 'data:application/pdf;base64,AA==' }, { imagen: null }, { imagen: null }]
+    })
+  );
   // bitacora:obtener espera un identificador, no filtros: se reutiliza el viaje
   // recién creado para que la prueba consulta un registro que existe.
   descartables['bitacora:obtener'] = descartables['bitacora:eliminar'];
