@@ -86,7 +86,11 @@ function crearNavegador() {
   };
 
   const ventanaImpresion = {
-    document: Object.assign({}, doc, { open() {}, write() {}, close() {} }),
+    document: Object.assign({}, doc, {
+      open() {},
+      write(html) { registro.htmlImpresion = html; },
+      close() {}
+    }),
     focus() {},
     print() { registro.impresas++; }
   };
@@ -174,6 +178,38 @@ async function ejecutar() {
     const r = bloqueado.contexto.imprimirHtmlEnVentana(html, 'x');
     ok = verificar('avisa con la ficha cuando el navegador bloquea la ventana',
       r === false && bloqueado.registro.alertas.length === 0 && !!bloqueado.ficha()) && ok;
+  }
+
+  // -------------------------------------------------- 2.5) estructura del reporte
+  console.log('\n2.5) Estructura profesional de impresión');
+  {
+    const { registro, contexto } = crearNavegador();
+    cargarUtilidades(contexto);
+    contexto.imprimirContenido({
+      titulo: 'Reporte </title><script>alert(1)</script>',
+      filtrosTexto: '<strong>Período:</strong> Este mes',
+      resumenHtml: '<div class="metrics-grid"><div class="card">Total</div></div>',
+      cuerpoHtml: '<div class="table-wrap"><table><thead><tr><th>Fecha</th></tr></thead><tbody><tr><td>Hoy</td></tr></tbody></table></div>',
+      bitacora: true
+    });
+    const html = registro.htmlImpresion || '';
+    ok = verificar('genera membrete e identidad visual corporativa',
+      /class="cab-logo"/.test(html) && /class="documento-impresion(?: bitacora)?"/.test(html)) && ok;
+    ok = verificar('prepara filtros, resumen y tabla para impresión multipágina',
+      /class="filtros"/.test(html) && /class="resumen"/.test(html) && /table-header-group/.test(html) && /counter\(pages\)/.test(html)) && ok;
+    ok = verificar('escapa el título antes de insertarlo en el documento',
+      !html.includes('</title><script>alert(1)</script>') && html.includes('&lt;/title&gt;')) && ok;
+    ok = verificar('imprime Bitácora en hoja horizontal y adapta sus columnas',
+      /@page\{size:letter landscape;/.test(html) && /documento-impresion bitacora/.test(html) &&
+      /min-width:0!important/.test(html) && /td:last-child\{display:none\}/.test(html)) && ok;
+    contexto.imprimirContenido({
+      titulo: 'Reporte estándar',
+      cuerpoHtml: '<table><thead><tr><th>Fecha</th></tr></thead><tbody><tr><td>Hoy</td></tr></tbody></table>'
+    });
+    ok = verificar('mantiene orientación vertical en los demás reportes',
+      /@page\{size:letter portrait;/.test(registro.htmlImpresion || '')) && ok;
+    await new Promise(r => setTimeout(r, 350));
+    ok = verificar('conserva el envío al diálogo de impresión', registro.impresas === 2, `impresas=${registro.impresas}`) && ok;
   }
 
   // ------------------------------------------------------ 3) imprimir escritorio

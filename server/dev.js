@@ -79,7 +79,7 @@ function servirEstatico(req, res) {
       res.end('No encontrado: ' + ruta);
       return;
     }
-    res.writeHead(200, { 'Content-Type': TIPOS[path.extname(destino)] || 'application/octet-stream' });
+    res.writeHead(200, { 'Content-Type': TIPOS[path.extname(destino)] || 'application/octet-stream', 'Cache-Control': 'no-store, must-revalidate' });
     res.end(contenido);
   });
 }

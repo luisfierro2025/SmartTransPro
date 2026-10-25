@@ -9,7 +9,15 @@ function actualizarBarraEstado(modulo){
   actualizarTicker();
 }
 
+function aplicarPreferenciasInterfaz(){
+  const densidad=localStorage.getItem('control-empresa-densidad')||'normal';
+  const escala=Number(localStorage.getItem('control-empresa-escala'))||100;
+  document.body.dataset.densidad=densidad;
+  document.documentElement.style.setProperty('--escala-contenido',String(escala/100));
+}
+
 function aplicarTema(){
+  aplicarPreferenciasInterfaz();
   const tema=localStorage.getItem('control-empresa-tema')||'light';
   document.body.classList.toggle('dark-theme',tema==='dark');
   const btn=document.getElementById('themeToggle');
@@ -211,6 +219,68 @@ function variacion(actual, anterior) {
   };
 }
 
+// Gráfico de área con líneas (SVG puro, sin librerías). Devuelve el markup
+// del gráfico: rejilla horizontal, área con degradado bajo cada curva, línea
+// con vértices y etiquetas del mes + monto al pasar el cursor.
+function graficaArea(serie) {
+  // El gráfico se dibuja al ancho real del panel: mido el contenedor cuando se
+  // monta y cuando la ventana cambia de tamaño, y redibujo. Así las letras
+  // nunca se estiran (preserveAspectRatio="none" deformaba texto y puntos).
+  const ALTO = 150, PADT = 16, PADB = 24, PADX = 10;
+  const medir = () => {
+    const ancho = Math.max(320, grafica.clientWidth || 640);
+    return { ANCHO: ancho, viewBox: `0 0 ${ancho} ${ALTO}` };
+  };
+  const { ANCHO } = medir();
+  const maximo = Math.max(1, ...serie.map(m => Math.max(m.ingresos, m.egresos)));
+  const n = serie.length;
+  const x = i => PADX + (n === 1 ? (ANCHO - PADX * 2) / 2 : i * (ANCHO - PADX * 2) / (n - 1));
+  const y = v => PADT + (1 - v / maximo) * (ALTO - PADT - PADB);
+
+  const trazo = clave => {
+    const pts = serie.map((m, i) => `${x(i).toFixed(1)},${y(m[clave]).toFixed(1)}`);
+    return `M${pts.join(' L')}`;
+  };
+  const area = clave => `${trazo(clave)} L${x(n - 1).toFixed(1)},${ALTO - PADB} L${x(0).toFixed(1)},${ALTO - PADB} Z`;
+
+  const lineas = [];
+  const pasos = 4;
+  for (let i = 0; i <= pasos; i++) {
+    const yy = PADT + i * (ALTO - PADT - PADB) / pasos;
+    const valor = maximo * (1 - i / pasos);
+    lineas.push(`<line x1="${PADX}" y1="${yy.toFixed(1)}" x2="${ANCHO - PADX}" y2="${yy.toFixed(1)}" class="ga-linea"/><text x="${PADX + 4}" y="${(yy - 3).toFixed(1)}" class="ga-escala">${formatoMonto(valor)}</text>`);
+  }
+
+  const puntos = serie.map((m, i) => `
+    <g class="ga-grupo">
+      <circle class="ga-punto ga-punto--ing" cx="${x(i).toFixed(1)}" cy="${y(m.ingresos).toFixed(1)}" r="3.4"/>
+      <circle class="ga-punto ga-punto--egr" cx="${x(i).toFixed(1)}" cy="${y(m.egresos).toFixed(1)}" r="3.4"/>
+      <text x="${x(i).toFixed(1)}" y="${ALTO - 10}" text-anchor="middle" class="ga-mes">${esc(etiquetaMes(m.mes))}</text>
+      <rect x="${(x(i) - (ANCHO - PADX * 2) / n / 2).toFixed(1)}" y="0" width="${((ANCHO - PADX * 2) / n).toFixed(1)}" height="${ALTO - PADB}" class="ga-zona"/>
+      <text x="${x(i).toFixed(1)}" y="${(y(Math.max(m.ingresos, m.egresos)) - 9).toFixed(1)}" text-anchor="middle" class="ga-tip" opacity="0"><tspan class="ga-tip-ing">+${esc(formatoMonto(m.ingresos))}</tspan>  <tspan class="ga-tip-egr">-${esc(formatoMonto(m.egresos))}</tspan></text>
+    </g>`).join('');
+
+  return `
+    <div class="ga-wrap">
+      <svg viewBox="0 0 ${ANCHO} ${ALTO}" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Ingresos y egresos por mes">
+        <defs>
+          <linearGradient id="ga-grad-ing" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#6366f1" stop-opacity=".32"/><stop offset="100%" stop-color="#6366f1" stop-opacity="0"/>
+          </linearGradient>
+          <linearGradient id="ga-grad-egr" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#8b5cf6" stop-opacity=".22"/><stop offset="100%" stop-color="#8b5cf6" stop-opacity="0"/>
+          </linearGradient>
+        </defs>
+        ${lineas.join('')}
+        <path d="${area('ingresos')}" fill="url(#ga-grad-ing)"/>
+        <path d="${area('egresos')}" fill="url(#ga-grad-egr)"/>
+        <path d="${trazo('ingresos')}" class="ga-line ga-line--ing"/>
+        <path d="${trazo('egresos')}" class="ga-line ga-line--egr"/>
+        ${puntos}
+      </svg>
+    </div>`;
+}
+
 // Pinta el tablero con los datos que devuelve dashboard:tablero. Va aparte de
 // renderDashboard porque es larga y así el esqueleto se lee de un vistazo.
 function pintarTablero(d) {
@@ -230,38 +300,34 @@ function pintarTablero(d) {
 
   const vUtilidad = variacion(utilidad, utilidadPrev);
   const cajaComp = document.getElementById('kComparativa');
-  cajaComp.className = 'kpi-comparativa ' + vUtilidad.clase;
-  cajaComp.textContent = `${vUtilidad.clase === 'sube' ? '▲' : vUtilidad.clase === 'baja' ? '▼' : '■'} ${vUtilidad.texto} frente al período anterior`;
+  cajaComp.className = 'dash-hero-variacion ' + (vUtilidad.clase === 'sube' ? 'sube' : vUtilidad.clase === 'baja' ? 'baja' : 'estable');
+  cajaComp.innerHTML = `<span class="var-flecha">${vUtilidad.clase === 'sube' ? '▲' : vUtilidad.clase === 'baja' ? '▼' : '■'}</span> ${esc(vUtilidad.texto)} frente al período anterior`;
 
   const pintarKpi = (idValor, idPie, valor, anterior, claseValor) => {
     document.getElementById(idValor).textContent = formatoMonto(valor);
-    if (claseValor) document.getElementById(idValor).className = 'kpi-valor ' + claseValor;
+    if (claseValor) document.getElementById(idValor).className = 'dash-kpi-valor ' + claseValor;
     const v = variacion(valor, anterior);
     const pie = document.getElementById(idPie);
-    pie.className = 'kpi-pie ' + v.clase;
-    pie.textContent = `${v.texto} frente al período anterior`;
+    pie.className = 'dash-kpi-pie ' + v.clase;
+    pie.innerHTML = `<span class="var-flecha">${v.clase === 'sube' ? '▲' : v.clase === 'baja' ? '▼' : '■'}</span> ${esc(v.texto)} frente al período anterior`;
   };
   pintarKpi('kIngresos', 'kIngresosVar', f.ingresos, f.anterior.ingresos, 'positivo');
   pintarKpi('kEgresos', 'kEgresosVar', f.egresos, f.anterior.egresos, 'negativo');
   document.getElementById('kCostos').textContent = formatoMonto(f.costosOperativos);
 
-  // Gráfico de barras. Todas las barras usan la MISMA escala (el mes más alto
-  // llega al tope): si cada mes midiera sobre su propio máximo, un mes con
-  // todo el gasto se vería igual de lleno que uno con el doble, y la
-  // comparación mentiría.
+  // Gráfico de área con líneas SVG. Todas las series usan la MISMA escala (el
+  // valor más alto llega al tope) para que la comparación no mienta.
   const serie = d.serie || [];
-  const maximo = Math.max(1, ...serie.map(m => Math.max(m.ingresos, m.egresos)));
   const contGrafica = document.getElementById('grafica');
-  contGrafica.innerHTML = serie.length
-    ? serie.map(m => `
-        <div class="grafica-col" title="${esc(`${etiquetaMes(m.mes)} · Ingresos ${formatoMonto(m.ingresos)} · Egresos ${formatoMonto(m.egresos)}`)}">
-          <div class="grafica-barras-int">
-            <div class="grafica-barra ingresos" style="height:${(m.ingresos / maximo * 100).toFixed(1)}%"></div>
-            <div class="grafica-barra egresos" style="height:${(m.egresos / maximo * 100).toFixed(1)}%"></div>
-          </div>
-          <div class="grafica-mes">${esc(etiquetaMes(m.mes))}</div>
-        </div>`).join('')
-    : '<div class="empty">Todavía no hay movimientos registrados.</div>';
+  contGrafica.innerHTML = serie.length ? graficaArea(serie) : '<div class="empty">Todavía no hay movimientos registrados.</div>';
+  // Redibuja al cambiar el tamaño de la ventana para que el gráfico siempre
+  // ocupe el ancho real del panel sin deformarse (se reemplaza el listener
+  // anterior si el tablero se vuelve a pintar).
+  if (contGrafica._onResize) window.removeEventListener('resize', contGrafica._onResize);
+  if (serie.length) {
+    contGrafica._onResize = () => { contGrafica.innerHTML = graficaArea(serie); };
+    window.addEventListener('resize', contGrafica._onResize);
+  }
 
   // Barras de proporción por categoría: dicen en un vistazo qué se lleva la
   // mayor parte del dinero, que es lo que se busca al abrir este tablero.
@@ -304,36 +370,65 @@ function pintarTablero(d) {
 
 async function renderDashboard(){
   content.innerHTML=`
-    <div class="page-intro">
-      <h2>Resumen general</h2>
-      <p>Movimiento administrativo, financiero y operativo registrado en la base de datos.</p>
-    </div>
-    <div class="tabla-c">
-      <div class="kpi-principal">
-        <div class="kpi-principal-etiqueta">Utilidad del período</div>
-        <div id="kUtilidad" class="kpi-principal-valor">-</div>
-        <div id="kMargen" class="kpi-principal-nota">-</div>
-        <div id="kComparativa" class="kpi-comparativa">-</div>
+    <div class="dash-hero">
+      <div class="dash-hero-txt">
+        <span class="dash-hero-eyebrow">Panel administrativo</span>
+        <h2>Resumen general</h2>
+        <p>Movimiento administrativo, financiero y operativo registrado en la base de datos.</p>
       </div>
-      <div class="kpi-lateral">
-        <div class="kpi-item">
-          <div class="kpi-etiqueta">Ingresos</div>
-          <div id="kIngresos" class="kpi-valor positivo">-</div>
-          <div id="kIngresosVar" class="kpi-pie">-</div>
-        </div>
-        <div class="kpi-item">
-          <div class="kpi-etiqueta">Egresos</div>
-          <div id="kEgresos" class="kpi-valor negativo">-</div>
-          <div id="kEgresosVar" class="kpi-pie">-</div>
-        </div>
-        <div class="kpi-item">
-          <div class="kpi-etiqueta">Costos operativos</div>
-          <div id="kCostos" class="kpi-valor">-</div>
-          <div class="kpi-pie">Planilla + combustible + viáticos</div>
-        </div>
+      <div class="dash-hero-kpi">
+        <span class="dash-hero-etiqueta">Utilidad del período</span>
+        <div id="kUtilidad" class="dash-hero-valor">-</div>
+        <div id="kMargen" class="dash-hero-nota">-</div>
+        <div id="kComparativa" class="dash-hero-variacion">-</div>
       </div>
     </div>
-    <div class="panel" style="margin-top:18px;">
+    <div class="dash-panel dash-panel--acciones">
+      <div id="avisoPendientes"></div>
+      <div class="action-buttons">
+        <button class="btn primary" data-ir="ingresos">Registrar ingreso</button>
+        <button class="btn" data-ir="egresos">Registrar gasto</button>
+        <button class="btn" data-ir="planilla">Registrar viático</button>
+        <button class="btn" data-ir="bitacora">Registrar viaje</button>
+        <button id="btnPantallaCompleta" class="btn btn-pantalla" type="button" title="Alternar pantalla completa">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 00-2 2v3"/><path d="M16 3h3a2 2 0 012 2v3"/><path d="M8 21H5a2 2 0 01-2-2v-3"/><path d="M16 21h3a2 2 0 002-2v-3"/></svg>
+          <span class="pc-texto">Pantalla completa</span>
+        </button>
+      </div>
+    </div>
+    <div class="dash-kpis">
+      <div class="dash-kpi">
+        <div class="dash-kpi-icono dash-kpi-icono--ingresos">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15l6-6 4 4 6-7"/><path d="M15 6h5v5"/></svg>
+        </div>
+        <div class="dash-kpi-datos">
+          <span class="dash-kpi-etiqueta">Ingresos</span>
+          <div id="kIngresos" class="dash-kpi-valor positivo">-</div>
+          <div id="kIngresosVar" class="dash-kpi-pie">-</div>
+        </div>
+      </div>
+      <div class="dash-kpi">
+        <div class="dash-kpi-icono dash-kpi-icono--egresos">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9l6 6 4-4 6 7"/><path d="M15 18h5v-5"/></svg>
+        </div>
+        <div class="dash-kpi-datos">
+          <span class="dash-kpi-etiqueta">Egresos</span>
+          <div id="kEgresos" class="dash-kpi-valor negativo">-</div>
+          <div id="kEgresosVar" class="dash-kpi-pie">-</div>
+        </div>
+      </div>
+      <div class="dash-kpi">
+        <div class="dash-kpi-icono dash-kpi-icono--costos">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="5" width="19" height="14" rx="2"/><path d="M2.5 10h19"/><path d="M6 14.5h5"/><path d="M6 17h3"/></svg>
+        </div>
+        <div class="dash-kpi-datos">
+          <span class="dash-kpi-etiqueta">Costos operativos</span>
+          <div id="kCostos" class="dash-kpi-valor">-</div>
+          <div class="dash-kpi-pie">Planilla + combustible + viáticos</div>
+        </div>
+      </div>
+    </div>
+    <div class="dash-panel dash-panel--grafica">
       <div class="panel-cabecera">
         <div>
           <h3>Ingresos y egresos por mes</h3>
@@ -344,42 +439,29 @@ async function renderDashboard(){
           <span><i class="leyenda-egresos"></i>Egresos</span>
         </div>
       </div>
-      <div id="grafica" class="grafica-barras"></div>
+      <div id="grafica" class="grafica-area"></div>
     </div>
     <div class="tablero-dos">
-      <div class="panel">
+      <div class="dash-panel">
         <div class="panel-cabecera">
           <div><h3>Ingresos por categoría</h3><p>De dónde viene el dinero del período.</p></div>
         </div>
         <div id="catIngresos" class="proporciones"></div>
       </div>
-      <div class="panel">
+      <div class="dash-panel">
         <div class="panel-cabecera">
           <div><h3>Egresos por categoría</h3><p>A dónde se va el dinero del período.</p></div>
         </div>
         <div id="catEgresos" class="proporciones"></div>
       </div>
     </div>
-    <div class="panel" style="margin-top:18px;">
-      <h3>Operación</h3>
-      <p>Viajes, kilometraje y flota del período seleccionado.</p>
+    <div class="dash-panel dash-panel--op">
       <div class="operativo">
-        <div class="op-item"><div class="op-valor" id="opViajes">-</div><div class="op-etiqueta">Viajes del período</div></div>
-        <div class="op-item"><div class="op-valor" id="opEnCurso">-</div><div class="op-etiqueta">Viajes en curso</div></div>
-        <div class="op-item"><div class="op-valor" id="opKm">-</div><div class="op-etiqueta">Kilómetros recorridos</div></div>
-        <div class="op-item"><div class="op-valor" id="opUnidades">-</div><div class="op-etiqueta">Unidades activas</div></div>
-        <div class="op-item"><div class="op-valor" id="opConductores">-</div><div class="op-etiqueta">Conductores activos</div></div>
-      </div>
-    </div>
-    <div id="avisoPendientes"></div>
-    <div class="panel">
-      <h3>Accesos rápidos</h3>
-      <p style="color:var(--muted); font-size:13px;">Registro directo en los módulos que alimentan este tablero.</p>
-      <div class="action-buttons">
-        <button class="btn primary" data-ir="ingresos">Registrar ingreso</button>
-        <button class="btn" data-ir="egresos">Registrar gasto</button>
-        <button class="btn" data-ir="planilla">Registrar viático</button>
-        <button class="btn" data-ir="bitacora">Registrar viaje</button>
+        <div class="op-item"><span class="op-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 20l-5 2V6l5-2 6 2 5-2v16l-5 2-6-2z"/><path d="M9 4v16"/><path d="M15 6v16"/></svg></span><div class="op-valor" id="opViajes">-</div><div class="op-etiqueta">Viajes del período</div></div>
+        <div class="op-item"><span class="op-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span><div class="op-valor" id="opEnCurso">-</div><div class="op-etiqueta">Viajes en curso</div></div>
+        <div class="op-item"><span class="op-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 18a8 8 0 1116 0"/><path d="M12 18l4-6"/><circle cx="12" cy="18" r="1"/></svg></span><div class="op-valor" id="opKm">-</div><div class="op-etiqueta">Kilómetros recorridos</div></div>
+        <div class="op-item"><span class="op-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 7h12v9H2z"/><path d="M14 10h4l4 3v3h-8"/><circle cx="7" cy="18" r="2"/><circle cx="17" cy="18" r="2"/></svg></span><div class="op-valor" id="opUnidades">-</div><div class="op-etiqueta">Unidades activas</div></div>
+        <div class="op-item"><span class="op-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0116 0"/></svg></span><div class="op-valor" id="opConductores">-</div><div class="op-etiqueta">Conductores activos</div></div>
       </div>
     </div>
   `;
@@ -391,6 +473,21 @@ async function renderDashboard(){
       abrir(b.dataset.ir);
     };
   });
+  const btnPantalla=document.getElementById('btnPantallaCompleta');
+  if(btnPantalla){
+    const etiqueta=btnPantalla.querySelector('.pc-texto');
+    const sincronizar=()=>{
+      const activa=!!document.fullscreenElement;
+      btnPantalla.classList.toggle('activa',activa);
+      etiqueta.textContent=activa?'Salir de pantalla completa':'Pantalla completa';
+    };
+    btnPantalla.onclick=()=>{
+      if(document.fullscreenElement) document.exitFullscreen();
+      else document.documentElement.requestFullscreen().catch(()=>{});
+    };
+    document.addEventListener('fullscreenchange',sincronizar);
+    sincronizar();
+  }
   try{
     pintarTablero(await window.api.dashboard.tablero({}));
   }catch(e){
@@ -588,7 +685,7 @@ async function renderBitacora(){
               <th>KM SALIDA / LLEGADA</th>
               <th style="text-align:right">VIATICO</th>
               <th style="text-align:right">ESTADIA</th>
-              <th style="text-align:right">ESTELI</th>
+              <th style="text-align:right">EXTRA</th>
               <th>ESTADO / NOTA</th>
               <th style="text-align:right">ACCIONES</th>
             </tr>
@@ -603,7 +700,9 @@ async function renderBitacora(){
               const condTxt = v.conductor_nombre ? esc(v.conductor_nombre) : '<span style="color:var(--muted)">-</span>';
               const cliTxt = v.cliente_nombre_rel ? esc(v.cliente_nombre_rel) : (v.cliente ? esc(v.cliente) : '<span style="color:var(--muted)">-</span>');
               const lugarSalidaTxt = esc(v.lugar_salida || v.origen || '-');
-              const notaTxt = v.observaciones || v.carga_descripcion || '';
+              const notaTxt = [v.observaciones, v.carga_descripcion]
+                .map(valor => String(valor || '').trim())
+                .find(valor => valor && !/^(?:sin observaciones relevan(?:tes)?|retorno con carga especial)[.!]?$/i.test(valor)) || '';
               const notaEsc = esc(notaTxt);
 
               return `
@@ -1393,79 +1492,104 @@ async function renderReportes(){
 }
 
 async function renderConfiguracion(){
+  const icono=(d)=>`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
   content.innerHTML=`
-    <div class="page-intro">
-      <h2>Configuración</h2>
-      <p>Centro de configuración del sistema: empresa, apariencia, base de datos e información del sistema.</p>
-    </div>
+    <div class="cfg-layout">
+      <aside class="cfg-nav">
+        <div class="cfg-nav-titulo">Configuración</div>
+        <button class="tab-btn active" data-tab="tabCfgEmpresa">${icono('<path d="M3 21h18"/><path d="M5 21V7l7-4 7 4v14"/><path d="M9 21v-6h6v6"/>')}<span>Empresa</span></button>
+        <button class="tab-btn" data-tab="tabCfgApariencia">${icono('<circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 000 18z" fill="currentColor"/>')}<span>Apariencia</span></button>
+        <button class="tab-btn" data-tab="tabCfgBaseDatos">${icono('<ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v6c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/><path d="M4 11v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/>')}<span>Base de datos</span></button>
+        <button class="tab-btn" data-tab="tabCfgAcerca">${icono('<circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><path d="M12 8h.01"/>')}<span>Acerca de</span></button>
+      </aside>
 
-    <div class="nav-tabs">
-      <button class="tab-btn active" data-tab="tabCfgEmpresa">Empresa</button>
-      <button class="tab-btn" data-tab="tabCfgApariencia">Apariencia</button>
-      <button class="tab-btn" data-tab="tabCfgBaseDatos">Base de Datos</button>
-      <button class="tab-btn" data-tab="tabCfgAcerca">Acerca de</button>
-    </div>
-
-    <div id="tabCfgEmpresa" class="tab-content active">
-      <div class="panel" style="margin-top:0;">
-        <h3>Datos de la empresa</h3>
-        <p style="margin-top:-4px; color:var(--muted); font-size:13px;">
-          Este nombre aparece junto a su logotipo en la parte superior del sistema y en los reportes impresos.
-          El nombre del sistema, <strong>SmartTransPro</strong>, no se puede modificar.
-        </p>
-        <div class="logo-config">
-          <div class="empresa-logo logo-config-preview" id="logoPreview" role="img" aria-label="Vista previa del logotipo"></div>
-          <div class="logo-config-acciones">
-            <div class="field" style="margin:0;">
-              <label>Logotipo de la empresa</label>
-              <input id="logoArchivo" type="file" accept="image/png,image/jpeg,image/svg+xml,image/webp">
+      <div class="cfg-main">
+        <div id="tabCfgEmpresa" class="tab-content active">
+          <section class="cfg-card">
+            <header class="cfg-card-cab"><div><h3>Datos de la empresa</h3><p>Aparecen junto al logotipo en la parte superior del sistema y en los reportes impresos. El nombre del sistema, <strong>SmartTransPro</strong>, no se puede modificar.</p></div></header>
+            <div class="cfg-card-cuerpo">
+              <div class="cfg-empresa">
+                <div class="cfg-logo-bloque">
+                  <div class="empresa-logo logo-config-preview cfg-logo-grande" id="logoPreview" role="img" aria-label="Vista previa del logotipo"></div>
+                  <div class="cfg-logo-botones">
+                    <label class="doc-btn" for="logoArchivo">Subir logotipo</label>
+                    <input id="logoArchivo" type="file" accept="image/png,image/jpeg,image/svg+xml,image/webp" class="doc-input">
+                    <button id="quitarLogo" class="btn btn-sm btn-secondary" type="button">Quitar</button>
+                  </div>
+                  <small class="cfg-nota">PNG, JPG, SVG o WebP · máximo 400 KB. Sin imagen se muestran las iniciales.</small>
+                </div>
+                <div class="cfg-campos">
+                  <div class="field"><label>Nombre de la empresa</label><input id="empresa" placeholder="Ej. Transporte Fierro"></div>
+                  <div class="cfg-fila">
+                    <div class="field"><label>Moneda</label><select id="moneda"><option value="NIO">NIO - Córdoba</option><option value="USD">USD - Dólar</option></select></div>
+                    <div class="field"><label>Símbolo</label><input id="simbolo" placeholder="Ej. C$"></div>
+                  </div>
+                  <div class="cfg-vista-previa"><span>Vista previa</span><strong id="cfgPrevMonto">-</strong></div>
+                </div>
+              </div>
             </div>
-            <button id="quitarLogo" class="btn btn-secondary" type="button">Quitar logotipo</button>
-            <p style="margin:0; color:var(--muted); font-size:12px;">
-              Si no carga ninguna imagen, se muestran las iniciales del nombre sobre un color propio de la empresa.
-            </p>
-          </div>
+            <footer class="cfg-card-pie"><button id="guardar" class="btn primary">Guardar configuración</button></footer>
+          </section>
         </div>
-        <div class="form-grid">
-          <div class="field"><label>Nombre de la empresa</label><input id="empresa" placeholder="Ej. Transporte Fierro"></div>
-          <div class="field"><label>Moneda</label><select id="moneda"><option value="NIO">NIO - Córdoba</option><option value="USD">USD - Dólar</option></select></div>
-          <div class="field"><label>Símbolo</label><input id="simbolo" placeholder="Ej. C$"></div>
+
+        <div id="tabCfgApariencia" class="tab-content">
+          <section class="cfg-card">
+            <header class="cfg-card-cab"><div><h3>Tema de la interfaz</h3><p>Se guarda en este equipo y no afecta a otros usuarios del sistema.</p></div></header>
+            <div class="cfg-card-cuerpo">
+              <div class="cfg-temas">
+                <button type="button" class="cfg-tema" data-tema="light">
+                  <span class="cfg-tema-mini cfg-tema-mini--claro"><i></i><i></i><i></i></span>
+                  <strong>Claro</strong><small>Fondo blanco, ideal con luz del día</small>
+                </button>
+                <button type="button" class="cfg-tema" data-tema="dark">
+                  <span class="cfg-tema-mini cfg-tema-mini--oscuro"><i></i><i></i><i></i></span>
+                  <strong>Oscuro</strong><small>Descansa la vista en ambientes tenues</small>
+                </button>
+              </div>
+            </div>
+          </section>
+          <section class="cfg-card">
+            <header class="cfg-card-cab"><div><h3>Densidad y tamaño</h3><p>Ajusta cuánta información cabe en pantalla. Útil en laptops.</p></div></header>
+            <div class="cfg-card-cuerpo cfg-opciones">
+              <div class="cfg-opcion">
+                <div><strong>Densidad de la interfaz</strong><small>Espaciado de tablas, tarjetas y formularios.</small></div>
+                <div class="cfg-segmento" data-pref="densidad">
+                  <button type="button" data-valor="compacta">Compacta</button>
+                  <button type="button" data-valor="normal">Normal</button>
+                  <button type="button" data-valor="amplia">Amplia</button>
+                </div>
+              </div>
+              <div class="cfg-opcion">
+                <div><strong>Tamaño del texto</strong><small>Escala toda la aplicación.</small></div>
+                <div class="cfg-segmento" data-pref="escala">
+                  <button type="button" data-valor="90">Pequeño</button>
+                  <button type="button" data-valor="100">Normal</button>
+                  <button type="button" data-valor="110">Grande</button>
+                </div>
+              </div>
+            </div>
+          </section>
         </div>
-        <div class="form-actions"><button id="guardar" class="btn primary">Guardar configuración</button></div>
-      </div>
-    </div>
 
-    <div id="tabCfgApariencia" class="tab-content">
-      <div class="panel" style="margin-top:0;">
-        <h3>Apariencia</h3>
-        <p style="margin-top:-4px; color:var(--muted); font-size:13px;">Esta preferencia se guarda en este equipo (no afecta a otros usuarios del sistema).</p>
-        <div class="form-grid">
-          <div class="field">
-            <label>Tema de la interfaz</label>
-            <select id="temaInterfaz">
-              <option value="light">Claro</option>
-              <option value="dark">Oscuro tipo código</option>
-            </select>
-          </div>
+        <div id="tabCfgBaseDatos" class="tab-content">
+          <section class="cfg-card">
+            <header class="cfg-card-cab"><div><h3>Base de datos</h3><p>Estado, respaldos y mantenimiento de la información del sistema.</p></div></header>
+            <div class="cfg-card-cuerpo"><div id="panelBaseDatos"><div class="empty">Cargando información de la base de datos...</div></div></div>
+          </section>
         </div>
-      </div>
-    </div>
 
-    <div id="tabCfgBaseDatos" class="tab-content">
-      <div class="panel" style="margin-top:0;">
-        <h3>Base de datos</h3>
-        <div id="panelBaseDatos"><div class="empty">Cargando información de la base de datos...</div></div>
-      </div>
-    </div>
-
-    <div id="tabCfgAcerca" class="tab-content">
-      <div class="panel" style="margin-top:0;">
-        <h3>Acerca del sistema</h3>
-        <div class="form-grid">
-          <div class="field"><label>Sistema</label><input disabled value="SmartTransPro"></div>
-          <div class="field"><label>Versión</label><input disabled value="0.1.0"></div>
-          <div class="field"><label>Empresa configurada</label><input disabled id="acercaEmpresa" value="-"></div>
-          <div class="field"><label>Motor de base de datos</label><input disabled id="acercaMotor" value="-"></div>
+        <div id="tabCfgAcerca" class="tab-content">
+          <section class="cfg-card">
+            <header class="cfg-card-cab"><div><h3>Acerca del sistema</h3><p>Información general de esta instalación.</p></div></header>
+            <div class="cfg-card-cuerpo">
+              <div class="cfg-info">
+                <div class="cfg-info-item"><span>Sistema</span><strong>SmartTransPro</strong></div>
+                <div class="cfg-info-item"><span>Versión</span><strong>0.1.0</strong></div>
+                <div class="cfg-info-item"><span>Empresa configurada</span><strong id="acercaEmpresa">-</strong></div>
+                <div class="cfg-info-item"><span>Motor de base de datos</span><strong id="acercaMotor">-</strong></div>
+              </div>
+            </div>
+          </section>
         </div>
       </div>
     </div>
@@ -1481,15 +1605,40 @@ async function renderConfiguracion(){
   }));
 
   const d=await window.api.configuracion.obtener();
-  document.getElementById('temaInterfaz').value=localStorage.getItem('control-empresa-tema')||'light';
-  document.getElementById('temaInterfaz').onchange=()=>{
-    localStorage.setItem('control-empresa-tema',document.getElementById('temaInterfaz').value);
-    aplicarTema();
+
+  // Preferencias de apariencia: se guardan solo en este equipo.
+  const marcarPreferencias=()=>{
+    const tema=localStorage.getItem('control-empresa-tema')||'light';
+    content.querySelectorAll('.cfg-tema').forEach(b=>b.classList.toggle('activo',b.dataset.tema===tema));
+    content.querySelectorAll('.cfg-segmento').forEach(seg=>{
+      const clave=seg.dataset.pref==='densidad'?'control-empresa-densidad':'control-empresa-escala';
+      const valor=localStorage.getItem(clave)||(seg.dataset.pref==='densidad'?'normal':'100');
+      seg.querySelectorAll('button').forEach(b=>b.classList.toggle('activo',b.dataset.valor===valor));
+    });
   };
+  content.querySelectorAll('.cfg-tema').forEach(b=>b.onclick=()=>{
+    localStorage.setItem('control-empresa-tema',b.dataset.tema);
+    aplicarTema();
+    marcarPreferencias();
+  });
+  content.querySelectorAll('.cfg-segmento button').forEach(b=>b.onclick=()=>{
+    const pref=b.parentElement.dataset.pref;
+    localStorage.setItem(pref==='densidad'?'control-empresa-densidad':'control-empresa-escala',b.dataset.valor);
+    aplicarPreferenciasInterfaz();
+    marcarPreferencias();
+  });
+  marcarPreferencias();
+
   document.getElementById('empresa').value=d.nombre_empresa||'';
   document.getElementById('moneda').value=d.moneda||'NIO';
   document.getElementById('simbolo').value=d.simbolo||'C$';
-  document.getElementById('acercaEmpresa').value=d.nombre_empresa||'Transporte Fierro';
+  document.getElementById('acercaEmpresa').textContent=d.nombre_empresa||'Transporte Fierro';
+  const refrescarMonto=()=>{
+    const sim=document.getElementById('simbolo').value.trim()||'C$';
+    document.getElementById('cfgPrevMonto').textContent=`${sim} 12,345.67`;
+  };
+  refrescarMonto();
+  document.getElementById('simbolo').addEventListener('input',refrescarMonto);
 
   // Logotipo: se trabaja con una copia en memoria y solo se guarda al pulsar
   // "Guardar configuración", igual que el nombre.
@@ -1531,12 +1680,12 @@ async function renderConfiguracion(){
       logo_empresa:logoElegida
     });
     await aplicarConfiguracionEmpresa();
-    document.getElementById('acercaEmpresa').value=nombreNuevo;
+    document.getElementById('acercaEmpresa').textContent=nombreNuevo;
     await avisarExito('Configuración guardada','Los datos de la empresa quedaron actualizados.');
   };
   await montarPanelBaseDatos();
   const info=await window.api.sistema.info().catch(()=>null);
-  if(info) document.getElementById('acercaMotor').value=`SQLite v${info.sqlite} · esquema ${info.version}`;
+  if(info) document.getElementById('acercaMotor').textContent=`SQLite v${info.sqlite} · esquema ${info.version}`;
 }
 
 (async()=>{

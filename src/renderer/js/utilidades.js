@@ -60,7 +60,8 @@ function activarBusquedaInteligenteYImpresion(raiz) {
       imprimirContenido({
         titulo: tituloPanel,
         filtrosTexto: resumenDeFiltros(barra),
-        cuerpoHtml: tabla.innerHTML
+        cuerpoHtml: tabla.innerHTML,
+        bitacora: tabla.id === 'contenedorTablaBitacora'
       });
     };
     (botonLimpiar || botonBuscar).insertAdjacentElement('afterend', botonImprimir);
@@ -121,9 +122,21 @@ function resumenDeFiltros(barra) {
 
 // Abre una ventana de impresión con el encabezado de la empresa, los filtros
 // aplicados y el contenido (tabla) tal como está en pantalla en ese momento.
-function imprimirContenido({ titulo, filtrosTexto, resumenHtml, cuerpoHtml }) {
-  const nombreEmpresa = (document.getElementById('empresaDestacada') && document.getElementById('empresaDestacada').textContent.trim())
-    || 'SmartTransPro';
+function escaparHtmlImpresion(valor) {
+  return String(valor === undefined || valor === null ? '' : valor)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function imprimirContenido({ titulo, filtrosTexto, resumenHtml, cuerpoHtml, bitacora = false }) {
+  const nombreEmpresa = escaparHtmlImpresion(
+    (document.getElementById('empresaDestacada') && document.getElementById('empresaDestacada').textContent.trim())
+      || 'SmartTransPro'
+  );
+  const tituloSeguro = escaparHtmlImpresion(titulo || 'Reporte');
   const fecha = new Intl.DateTimeFormat('es-NI', { dateStyle: 'long', timeStyle: 'short' }).format(new Date());
   const ventana = window.open('', '_blank', 'width=1024,height=720');
   if (!ventana) {
@@ -144,35 +157,60 @@ function imprimirContenido({ titulo, filtrosTexto, resumenHtml, cuerpoHtml }) {
     <html lang="es">
     <head>
       <meta charset="UTF-8">
-      <title>${titulo} - Impresión</title>
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      <title>${tituloSeguro} - SmartTransPro</title>
       <style>
+        :root{color-scheme:light;--acento:#1d4ed8;--texto:#172033;--suave:#64748b;--borde:#dfe5ee;--fondo:#f5f7fb}
         *{box-sizing:border-box}
-        body{font-family:Arial,Helvetica,sans-serif;color:#17202a;padding:26px;margin:0}
-        .cab{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:2px solid #17202a;padding-bottom:10px;margin-bottom:16px}
-        .cab h1{font-size:19px;margin:0 0 2px}
-        .cab h2{font-size:14px;margin:0;color:#667085;font-weight:600}
-        .cab small{color:#667085;white-space:nowrap;margin-left:14px}
-        .filtros{margin-bottom:14px;font-size:12.5px;color:#344054;background:#f2f4f7;padding:8px 12px;border-radius:6px}
-        table{width:100%;border-collapse:collapse;font-size:12px}
-        th,td{border:1px solid #d0d5dd;padding:6px 8px;text-align:left}
-        /* Mismo color que el sidebar de la aplicación, para que el documento
-           impreso se vea como la pantalla de donde se generó. */
-        th{background:#20252b;color:#fff;border-color:#20252b}
-        .badge{display:inline-block;padding:2px 7px;border-radius:10px;font-size:10px;font-weight:700;border:1px solid #d0d5dd}
-        .pie{margin-top:18px;font-size:10.5px;color:#98a2b3;text-align:right}
-        button, .btn, .action-buttons{display:none !important}
-        @page{margin:14mm}
+        body{margin:0;background:#eef2f7;color:var(--texto);font:12px/1.45 "Segoe UI",Arial,sans-serif;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+        .documento-impresion{max-width:216mm;min-height:279mm;margin:20px auto;padding:17mm 15mm;background:#fff;box-shadow:0 4px 24px #17203320}
+        .cab{display:flex;justify-content:space-between;align-items:flex-start;gap:20px;padding-bottom:13px;border-bottom:3px solid var(--acento)}
+        .cab-marca{display:flex;align-items:center;gap:11px;min-width:0}
+        .cab-logo{width:40px;height:40px;flex:0 0 40px;border-radius:9px;background:linear-gradient(135deg,#3b82f6,#1e3a8a);color:#fff;font-size:19px;font-weight:800;display:grid;place-items:center}
+        .cab h1{margin:0;font-size:18px;line-height:1.2;letter-spacing:-.02em}
+        .cab h2{margin:4px 0 0;color:#334155;font-size:12px;font-weight:650}
+        .cab-meta{text-align:right;color:var(--suave);font-size:9px;line-height:1.5}
+        .cab-meta strong{display:block;color:var(--acento);font-size:8px;letter-spacing:.12em;text-transform:uppercase}
+        .filtros{margin:14px 0;padding:9px 12px;border:1px solid var(--borde);border-left:3px solid var(--acento);border-radius:5px;background:var(--fondo);color:#334155;font-size:10px}
+        .metrics-grid,.resumen-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin:0 0 14px}
+        .card,.resumen-caja{min-width:0;padding:9px 10px;border:1px solid var(--borde);border-radius:6px;background:#f8fafc;break-inside:avoid}
+        .card-label,.resumen-caja .et{display:block;color:var(--suave);font-size:8px;font-weight:700;letter-spacing:.07em;text-transform:uppercase}
+        .card-value,.resumen-caja .val{display:block;margin-top:4px;color:var(--texto);font-size:14px;font-weight:750;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+        .table-wrap{max-height:none!important;overflow:visible!important}
+        table{width:100%;border-collapse:collapse;font-size:10px;line-height:1.35}
+        thead{display:table-header-group}
+        tfoot{display:table-row-group}
+        tr{break-inside:avoid;page-break-inside:avoid}
+        th{padding:8px 7px;border-bottom:2px solid #191627;background:#191627;color:#fff;text-align:left;font-size:8px;font-weight:700;letter-spacing:.045em;text-transform:uppercase}
+        td{padding:6px 7px;border-bottom:1px solid var(--borde);vertical-align:top}
+        tbody tr:nth-child(even) td{background:#f7f9fc}
+        tfoot td{border-top:2px solid #334155;background:#eef2f7;font-weight:750}
+        td[style*="text-align:right"],th[style*="text-align:right"]{text-align:right!important;font-variant-numeric:tabular-nums;white-space:nowrap}
+        .badge{display:inline-block;padding:2px 7px;border:1px solid #cbd5e1;border-radius:10px;background:#f1f5f9;color:#334155;font-size:8px;font-weight:700}
+        .documento-impresion.bitacora table{width:100%;min-width:0!important;table-layout:fixed;font-size:7px}
+        .documento-impresion.bitacora th,.documento-impresion.bitacora td{padding:3px 2px;overflow-wrap:anywhere;word-break:break-word;white-space:normal!important}
+        .documento-impresion.bitacora th:last-child,.documento-impresion.bitacora td:last-child{display:none}
+        .pie{margin-top:18px;padding-top:8px;border-top:1px solid var(--borde);color:var(--suave);font-size:8px;text-align:center}
+        button,.btn,.action-buttons{display:none!important}
+        @page{size:letter ${bitacora ? 'landscape' : 'portrait'};margin:16mm 14mm 18mm;@bottom-left{content:"SmartTransPro · documento operativo";font:8px "Segoe UI",Arial,sans-serif;color:#64748b}@bottom-right{content:"Página " counter(page) " de " counter(pages);font:8px "Segoe UI",Arial,sans-serif;color:#64748b}}
+        @media print{body{background:#fff}.documento-impresion{max-width:none;min-height:0;margin:0;padding:0;box-shadow:none}.table-wrap{break-inside:auto}}
+        @media screen and (max-width:700px){.documento-impresion{min-height:0;margin:0;padding:20px}.metrics-grid,.resumen-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.cab{gap:10px}.cab-meta{max-width:140px}}
       </style>
     </head>
     <body>
-      <div class="cab">
-        <div><h1>${nombreEmpresa}</h1><h2>${titulo}</h2></div>
-        <small>${fecha}</small>
-      </div>
-      ${filtrosTexto ? `<div class="filtros">${filtrosTexto}</div>` : ''}
-      ${resumenHtml || ''}
-      ${cuerpoHtml}
-      <div class="pie">Generado por SmartTransPro</div>
+      <main class="documento-impresion${bitacora ? ' bitacora' : ''}">
+        <header class="cab">
+          <div class="cab-marca">
+            <div class="cab-logo" aria-hidden="true">${nombreEmpresa.trim().charAt(0).toUpperCase() || 'S'}</div>
+            <div><h1>${nombreEmpresa}</h1><h2>${tituloSeguro}</h2></div>
+          </div>
+          <div class="cab-meta"><strong>Informe de gestión</strong>Generado el<br>${fecha}</div>
+        </header>
+        ${filtrosTexto ? `<div class="filtros">${filtrosTexto}</div>` : ''}
+        ${resumenHtml ? `<section class="resumen" aria-label="Resumen">${resumenHtml}</section>` : ''}
+        <section class="contenido-reporte" aria-label="Detalle del reporte">${cuerpoHtml || ''}</section>
+        <footer class="pie">Documento generado automáticamente por SmartTransPro · Información correspondiente a la consulta realizada</footer>
+      </main>
     </body>
     </html>
   `);
@@ -186,7 +224,7 @@ function imprimirContenido({ titulo, filtrosTexto, resumenHtml, cuerpoHtml }) {
     titulo: 'Reporte enviado a imprimir',
     subtitulo: 'Se abrió en una ventana nueva con los datos filtrados de este momento.',
     documentoTitulo: 'Contenido del reporte',
-    campos: [['Reporte', titulo], ['Generado', fecha]],
+    campos: [['Reporte', tituloSeguro], ['Generado', fecha]],
     pasos: [
       'Revisa en la ventana abierta que la tabla salga completa.',
       'Elige la impresora o la opción <b>Guardar como PDF</b>.'
@@ -223,7 +261,7 @@ function documentoProfesionalHtml({ titulo, subtitulo, filtrosTexto, resumenHtml
         .resumen-caja .et{font-size:10px;color:#667085;text-transform:uppercase;letter-spacing:.3px}
         .resumen-caja .val{font-size:16px;font-weight:700;color:#17202a;margin-top:4px}
         table{width:100%;border-collapse:collapse;font-size:11.5px}
-        thead th{background:#20252b;color:#fff;text-align:left;padding:8px 9px;font-weight:600}
+        thead th{background:#191627;color:#fff;text-align:left;padding:8px 9px;font-weight:600}
         tbody td{border-bottom:1px solid #e2e6ea;padding:7px 9px}
         tbody tr:nth-child(even){background:#f8f9fa}
         tfoot td{border-top:2px solid #344054;padding:9px;font-weight:700;background:#f2f4f7}
