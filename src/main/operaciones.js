@@ -102,13 +102,20 @@ async function generarCodigoEmpleado(db) {
 async function guardarEmpleado(_, d) {
   const db = obtenerDB();
   const codigo = texto(d.codigo) || await generarCodigoEmpleado(db);
-  const datos = [codigo, texto(d.nombre), texto(d.cedula), texto(d.cargo), numero(d.salario_base), texto(d.fecha_ingreso), booleano(d.activo !== undefined ? d.activo : 1)];
+  const conductorId = entero(d.conductor_id);
+  if (conductorId) {
+    const parametros = d.id ? { conductor_id: conductorId, id: d.id } : { conductor_id: conductorId };
+    const whereId = d.id ? 'AND id<>@id' : '';
+    const asignado = await db.prepare(`SELECT id FROM empleados WHERE conductor_id=@conductor_id ${whereId}`).get(parametros);
+    if (asignado) throw new Error('Ese conductor ya está vinculado a otro empleado.');
+  }
+  const datos = [codigo, texto(d.nombre), texto(d.cedula), texto(d.cargo), numero(d.salario_base), conductorId, texto(d.fecha_ingreso), booleano(d.activo !== undefined ? d.activo : 1)];
   if (d.id) {
-    await db.prepare('UPDATE empleados SET codigo=?, nombre=?, cedula=?, cargo=?, salario_base=?, fecha_ingreso=?, activo=? WHERE id=?').run(...datos, d.id);
+    await db.prepare('UPDATE empleados SET codigo=?, nombre=?, cedula=?, cargo=?, salario_base=?, conductor_id=?, fecha_ingreso=?, activo=? WHERE id=?').run(...datos, d.id);
     await registrarAuditoria('empleados', 'ACTUALIZAR', d.id, `Empleado actualizado: ${datos[1]}`);
     return { ok: true, id: d.id };
   }
-  const res = await db.prepare('INSERT INTO empleados (codigo, nombre, cedula, cargo, salario_base, fecha_ingreso, activo) VALUES (?, ?, ?, ?, ?, ?, ?)').run(...datos);
+  const res = await db.prepare('INSERT INTO empleados (codigo, nombre, cedula, cargo, salario_base, conductor_id, fecha_ingreso, activo) VALUES (?, ?, ?, ?, ?, ?, ?, ?)').run(...datos);
   await registrarAuditoria('empleados', 'CREAR', res.lastInsertRowid, `Empleado creado: ${datos[1]}`);
   return { ok: true, id: res.lastInsertRowid };
 }
@@ -241,7 +248,7 @@ async function listarViaticos(_, f = {}) {
   // el detalle se consulta aparte con bitacora:obtener cuando se pide "Ver ficha".
   return await db.prepare(`
     SELECT v.*, c.nombre AS conductor_nombre,
-           bv.fecha AS viaje_fecha, bv.lugar_salida AS viaje_origen, bv.destino AS viaje_destino
+           bv.fecha AS viaje_fecha, bv.lugar_salida AS viaje_origen, bv.destino AS viaje_destino, bv.estado AS viaje_estado
     FROM viaticos v
     LEFT JOIN conductores c ON c.id = v.conductor_id
     LEFT JOIN bitacora_viajes bv ON bv.id = v.viaje_id
@@ -271,6 +278,7 @@ async function listarViajesParaViatico(_, f = {}) {
     FROM bitacora_viajes b
     LEFT JOIN conductores c ON c.id = b.conductor_id
     WHERE b.conductor_id = @conductor_id
+      AND b.estado = 'COMPLETADO'
       AND b.id NOT IN (
         SELECT v.viaje_id FROM viaticos v
         WHERE v.viaje_id IS NOT NULL ${excluirPropio}
@@ -298,21 +306,49 @@ async function verificarViajeSinCobrar(db, viajeId, viaticoId) {
   );
 }
 
+// Un viático ligado a un viaje de Bitácora solo se puede pagar cuando el viaje está completado.
+async function exigirViajeCompletado(db, viajeId) {
+  if (!viajeId) return;
+  const viaje = await db.prepare('SELECT id, estado FROM bitacora_viajes WHERE id=?').get(viajeId);
+  if (viaje && viaje.estado !== 'COMPLETADO') {
+    throw new Error(`El viaje #${viaje.id} sigue en estado ${viaje.estado}. El viático se podrá pagar cuando el viaje esté completado en Bitácora.`);
+  }
+}
+
+async function exigirMovimientoNoVinculadoPlanilla(db, tipo, id) {
+  const planilla = await db.prepare(`
+    SELECT p.periodo, p.estado
+    FROM planilla_movimientos pm
+    JOIN planillas p ON p.id = pm.planilla_id
+    WHERE pm.tipo = ? AND pm.movimiento_id = ?
+    LIMIT 1`).get(tipo, id);
+  if (planilla) {
+    throw new Error(`Este movimiento ya está incluido en la planilla ${planilla.periodo} (${planilla.estado}) y no se puede modificar por separado.`);
+  }
+}
+
 async function guardarViatico(_, d) {
   const db = obtenerDB();
+  if (d.id) await exigirMovimientoNoVinculadoPlanilla(db, 'VIATICO', d.id);
   const liquidado = booleano(d.liquidado);
   const estado = liquidado ? 'LIQUIDADO' : 'PENDIENTE';
   const viajeId = entero(d.viaje_id);
   const viaticoId = entero(d.id);
+  const conductorId = entero(d.conductor_id);
+  const empleadoVinculado = conductorId
+    ? await db.prepare('SELECT id FROM empleados WHERE conductor_id=?').get(conductorId)
+    : null;
+  const empleadoId = entero(d.empleado_id) || (empleadoVinculado ? empleadoVinculado.id : null);
   await verificarViajeSinCobrar(db, viajeId, viaticoId);
-  const datos = [entero(d.conductor_id), viajeId, d.fecha, texto(d.destino), texto(d.motivo), numero(d.monto), liquidado, estado, texto(d.observacion)];
+  if (liquidado) await exigirViajeCompletado(db, viajeId);
+  const datos = [empleadoId, conductorId, viajeId, d.fecha, texto(d.destino), texto(d.motivo), numero(d.monto), liquidado, estado, texto(d.observacion)];
   if (d.id) {
-    await db.prepare('UPDATE viaticos SET conductor_id=?, viaje_id=?, fecha=?, destino=?, motivo=?, monto=?, liquidado=?, estado=?, observacion=? WHERE id=?')
+    await db.prepare('UPDATE viaticos SET empleado_id=?, conductor_id=?, viaje_id=?, fecha=?, destino=?, motivo=?, monto=?, liquidado=?, estado=?, observacion=? WHERE id=?')
       .run(...datos, d.id);
     await registrarAuditoria('viaticos', 'ACTUALIZAR', d.id, `Viático actualizado: ${d.destino || ''} (${numero(d.monto)})`);
     return { ok: true, id: d.id };
   }
-  const res = await db.prepare('INSERT INTO viaticos (conductor_id, viaje_id, fecha, destino, motivo, monto, liquidado, estado, observacion) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+  const res = await db.prepare('INSERT INTO viaticos (empleado_id, conductor_id, viaje_id, fecha, destino, motivo, monto, liquidado, estado, observacion) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
     .run(...datos);
   await registrarAuditoria('viaticos', 'CREAR', res.lastInsertRowid, `Viático registrado: ${d.destino || ''} (${numero(d.monto)})`);
   return { ok: true, id: res.lastInsertRowid };
@@ -320,6 +356,9 @@ async function guardarViatico(_, d) {
 
 async function liquidarViatico(_, id) {
   const db = obtenerDB();
+  await exigirMovimientoNoVinculadoPlanilla(db, 'VIATICO', id);
+  const viaticoPorPagar = await db.prepare('SELECT viaje_id FROM viaticos WHERE id=?').get(id);
+  if (viaticoPorPagar) await exigirViajeCompletado(db, viaticoPorPagar.viaje_id);
   await db.prepare("UPDATE viaticos SET liquidado=1, estado='LIQUIDADO' WHERE id=?").run(id);
   await registrarAuditoria('viaticos', 'LIQUIDAR', id, 'Viático liquidado');
   return { ok: true, id };
@@ -327,6 +366,7 @@ async function liquidarViatico(_, id) {
 
 async function eliminarViatico(_, id) {
   const db = obtenerDB();
+  await exigirMovimientoNoVinculadoPlanilla(db, 'VIATICO', id);
   await db.prepare('DELETE FROM viaticos WHERE id=?').run(id);
   await registrarAuditoria('viaticos', 'ELIMINAR', id, 'Viático eliminado');
   return { ok: true };
@@ -357,7 +397,8 @@ async function resumenViaticos(_, f = {}) {
 //   PORCENTAJE -> % del flete          (monto = base_calculo * valor / 100)
 //   POR_KM     -> tarifa por kilómetro (monto = base_calculo * valor)
 //   FIJO       -> monto fijo           (monto = valor)
-const TIPOS_COMISION = ['PORCENTAJE', 'POR_KM', 'FIJO'];
+//   POR_DESTINO-> tarifa de la ruta origen-destino (monto = valor, tomado de tarifas_destino)
+const TIPOS_COMISION = ['PORCENTAJE', 'POR_KM', 'FIJO', 'POR_DESTINO'];
 
 function tipoComision(valor) {
   const t = String(texto(valor) || '').toUpperCase();
@@ -387,8 +428,77 @@ function rangoDePeriodo(periodo) {
 function montoComision(tipo, base, valor) {
   const b = numero(base);
   const v = numero(valor);
-  const calculado = tipo === 'FIJO' ? v : (tipo === 'POR_KM' ? b * v : (b * v) / 100);
+  const calculado = (tipo === 'FIJO' || tipo === 'POR_DESTINO') ? v : (tipo === 'POR_KM' ? b * v : (b * v) / 100);
   return Math.round(calculado * 100) / 100;
+}
+
+// Tarifas por destino: cada pareja origen -> destino tiene un valor de comision.
+function parejaRuta(origen, destino) {
+  const o = texto(origen);
+  const d = texto(destino);
+  if (!o || !d) throw new Error('Indique el origen y el destino de la tarifa.');
+  return { origen: o, destino: d };
+}
+
+async function buscarTarifaDestino(db, origen, destino) {
+  const o = texto(origen);
+  const d = texto(destino);
+  if (!o || !d) return null;
+  return (await db.prepare('SELECT * FROM tarifas_destino WHERE lower(origen)=lower(@origen) AND lower(destino)=lower(@destino) AND activo=@activo')
+    .get({ origen: o, destino: d, activo: 1 })) || null;
+}
+
+async function listarTarifasDestino(_, f = {}) {
+  const db = obtenerDB();
+  const p = {};
+  let donde = '';
+  if (texto(f.busqueda)) {
+    donde = 'WHERE origen LIKE @q OR destino LIKE @q';
+    p.q = `%${texto(f.busqueda)}%`;
+  }
+  return await db.prepare(`SELECT * FROM tarifas_destino ${donde} ORDER BY origen, destino`).all(p);
+}
+
+// Devuelve la tarifa de una ruta, o la de un viaje de Bitacora si se indica viaje_id.
+async function tarifaDeRuta(_, f = {}) {
+  const db = obtenerDB();
+  let origen = f.origen;
+  let destino = f.destino;
+  if (entero(f.viaje_id)) {
+    const viaje = await db.prepare('SELECT lugar_salida, origen, destino FROM bitacora_viajes WHERE id=?').get(entero(f.viaje_id));
+    if (viaje) { origen = texto(viaje.lugar_salida) || viaje.origen; destino = viaje.destino; }
+  }
+  return await buscarTarifaDestino(db, origen, destino);
+}
+
+async function guardarTarifaDestino(_, d = {}) {
+  const db = obtenerDB();
+  const { origen, destino } = parejaRuta(d.origen, d.destino);
+  const valor = numero(d.valor);
+  if (valor <= 0) throw new Error('El valor de la tarifa debe ser mayor que cero.');
+  const activo = d.activo === false || d.activo === 0 || d.activo === '0' ? 0 : 1;
+  const repetida = await db.prepare('SELECT id FROM tarifas_destino WHERE lower(origen)=lower(@origen) AND lower(destino)=lower(@destino)')
+    .get({ origen, destino });
+  if (repetida && String(repetida.id) !== String(d.id)) {
+    throw new Error('Ya existe una tarifa para esa ruta. Edítela en lugar de crear otra.');
+  }
+  if (d.id) {
+    await db.prepare('UPDATE tarifas_destino SET origen=?, destino=?, valor=?, activo=?, observacion=? WHERE id=?')
+      .run(origen, destino, valor, activo, texto(d.observacion), d.id);
+    await registrarAuditoria('comisiones', 'ACTUALIZAR', d.id, `Tarifa por destino ${origen} - ${destino}: ${valor}`);
+    return { ok: true, id: d.id };
+  }
+  const res = await db.prepare('INSERT INTO tarifas_destino (origen, destino, valor, activo, observacion) VALUES (?, ?, ?, ?, ?)')
+    .run(origen, destino, valor, activo, texto(d.observacion));
+  await registrarAuditoria('comisiones', 'CREAR', res.lastInsertRowid, `Tarifa por destino ${origen} - ${destino}: ${valor}`);
+  return { ok: true, id: res.lastInsertRowid };
+}
+
+async function eliminarTarifaDestino(_, id) {
+  const db = obtenerDB();
+  await db.prepare('DELETE FROM tarifas_destino WHERE id=?').run(id);
+  await registrarAuditoria('comisiones', 'ELIMINAR', id, 'Tarifa por destino eliminada');
+  return { ok: true };
 }
 
 async function listarComisiones(_, f = {}) {
@@ -436,11 +546,19 @@ async function resumenComisiones(_, f = {}) {
 
 async function guardarComision(_, d) {
   const db = obtenerDB();
+  if (d.id) await exigirMovimientoNoVinculadoPlanilla(db, 'COMISION', d.id);
   const fecha = texto(d.fecha);
   if (!fecha) throw new Error('La comisión necesita una fecha.');
   const tipo = tipoComision(d.tipo);
   const base = numero(d.base_calculo);
-  const valor = numero(d.valor_calculo);
+  let valor = numero(d.valor_calculo);
+  if (tipo === 'POR_DESTINO' && valor <= 0 && entero(d.viaje_id)) {
+    const tarifa = await tarifaDeRuta(null, { viaje_id: d.viaje_id });
+    if (tarifa) valor = numero(tarifa.valor);
+  }
+  if (tipo === 'POR_DESTINO' && valor <= 0) {
+    throw new Error('No hay tarifa para esa ruta. Registre el valor o créela en "Tarifas por destino".');
+  }
   const monto = numero(d.monto) || montoComision(tipo, base, valor);
   const estado = estadoComision(d.estado);
   const periodo = periodoComision(d.periodo || String(fecha).slice(0, 7));
@@ -471,6 +589,7 @@ async function pagarComision(_, d) {
   const esObjeto = d !== null && typeof d === 'object';
   const id = entero(esObjeto ? d.id : d);
   if (!id) throw new Error('Falta la comisión que se va a pagar.');
+  await exigirMovimientoNoVinculadoPlanilla(db, 'COMISION', id);
   const metodo = esObjeto ? texto(d.metodo) : null;
   const fila = await db.prepare('SELECT monto FROM comisiones WHERE id=?').get(id);
   await db.prepare("UPDATE comisiones SET estado='PAGADA', fecha_pago=COALESCE(fecha_pago, date('now')) WHERE id=?").run(id);
@@ -490,6 +609,17 @@ async function pagarComisionesDelConductor(_, d = {}) {
   filtroFechas(condiciones, p, d, 'fecha');
   if (texto(d.periodo)) { condiciones.push('periodo=@periodo'); p.periodo = texto(d.periodo); }
   const where = condiciones.join(' AND ');
+  const condicionesReservadas = ['c.conductor_id=@conductor_id', "c.estado<>'PAGADA'"];
+  filtroFechas(condicionesReservadas, p, d, 'c.fecha');
+  if (texto(d.periodo)) condicionesReservadas.push('c.periodo=@periodo');
+  const reservadas = await db.prepare(`
+    SELECT COUNT(*) total
+    FROM comisiones c
+    JOIN planilla_movimientos pm ON pm.tipo='COMISION' AND pm.movimiento_id=c.id
+    WHERE ${condicionesReservadas.join(' AND ')}`).get(p);
+  if (numero(reservadas.total)) {
+    throw new Error('Hay comisiones del período incluidas en una planilla. Pague o elimine primero el borrador de planilla.');
+  }
   const pendientes = await db.prepare(`SELECT COALESCE(SUM(monto),0) total, COUNT(*) cantidad FROM comisiones WHERE ${where}`).get(p);
   const metodo = texto(d.metodo);
   const res = await db.prepare(
@@ -501,6 +631,7 @@ async function pagarComisionesDelConductor(_, d = {}) {
 
 async function eliminarComision(_, id) {
   const db = obtenerDB();
+  await exigirMovimientoNoVinculadoPlanilla(db, 'COMISION', id);
   await db.prepare('DELETE FROM comisiones WHERE id=?').run(id);
   await registrarAuditoria('comisiones', 'ELIMINAR', id, 'Comisión eliminada');
   return { ok: true };
@@ -516,6 +647,9 @@ async function generarComisiones(_, d = {}) {
   const tipo = tipoComision(d.tipo);
   if (tipo === 'PORCENTAJE') {
     throw new Error('La comisión por porcentaje necesita la base del flete: regístrela con "+ Registrar Comisión".');
+  }
+  if (tipo === 'POR_DESTINO') {
+    throw new Error('La comisión por destino se registra por viaje con "+ Registrar Comisión": elija el viaje y se toma su tarifa.');
   }
   const valorCalculo = numero(d.valor_calculo !== undefined ? d.valor_calculo : d.valor);
   if (valorCalculo <= 0) {
@@ -637,20 +771,28 @@ async function resumenDashboard(_, f = {}) {
   // Por defecto, el mes en curso.
   let desde = texto(f.desde);
   let hasta = texto(f.hasta);
-  if (!desde || !hasta) {
+  if (!desde && !hasta) {
     const r = rangoDeMeses(1);
     desde = r.desde;
     hasta = r.hasta;
   }
+  const historico = !desde;
+  if (historico) {
+    desde = '0001-01-01';
+  } else if (!hasta) {
+    hasta = rangoDeMeses(1).hasta;
+  }
 
   // Período anterior de la misma duración: la base de la comparación.
-  const dias = Math.max(1, Math.round((new Date(hasta) - new Date(desde)) / 86400000) + 1);
-  const finAnterior = new Date(new Date(desde).getTime() - 86400000);
-  const inicioAnterior = new Date(finAnterior.getTime() - (dias - 1) * 86400000);
-  const previo = {
-    desde: inicioAnterior.toISOString().slice(0, 10),
-    hasta: finAnterior.toISOString().slice(0, 10)
-  };
+  const previo = historico ? null : (() => {
+    const dias = Math.max(1, Math.round((new Date(hasta) - new Date(desde)) / 86400000) + 1);
+    const finAnterior = new Date(new Date(desde).getTime() - 86400000);
+    const inicioAnterior = new Date(finAnterior.getTime() - (dias - 1) * 86400000);
+    return {
+      desde: inicioAnterior.toISOString().slice(0, 10),
+      hasta: finAnterior.toISOString().slice(0, 10)
+    };
+  })();
 
   // Meses para el gráfico: seis hacia atrás desde el mes de "hasta".
   const finMes = new Date(hasta);
@@ -659,14 +801,19 @@ async function resumenDashboard(_, f = {}) {
     hasta: new Date(finMes.getFullYear(), finMes.getMonth() + 1, 0).toISOString().slice(0, 10)
   };
 
-  const [ingresosP, egresosP, ingresosAnt, egresosAnt, serieIng, serieEgr] = await Promise.all([
+  const [ingresosP, egresosP, anteriores, serieIng, serieEgr] = await Promise.all([
     resumenFinanciero('ingresos', { desde, hasta }),
     resumenFinanciero('egresos', { desde, hasta }),
-    resumenFinanciero('ingresos', previo),
-    resumenFinanciero('egresos', previo),
+    previo
+      ? Promise.all([
+        resumenFinanciero('ingresos', previo),
+        resumenFinanciero('egresos', previo)
+      ])
+      : Promise.resolve([{ total: 0 }, { total: 0 }]),
     serieMensual(db, 'ingresos', serie.desde, serie.hasta),
     serieMensual(db, 'egresos', serie.desde, serie.hasta)
   ]);
+  const [ingresosAnt, egresosAnt] = anteriores;
 
   // En PostgreSQL un COALESCE(SUM(...),0) sobre una tabla vacía puede llegar
   // como null y COUNT(*) como texto, así que todo se pasa por numero(): si no,
@@ -718,7 +865,7 @@ async function resumenDashboard(_, f = {}) {
   const utilidad = totalIngresos - totalEgresos - costosOperativos;
 
   return {
-    rango: { desde, hasta, previo },
+    rango: { desde: historico ? null : desde, hasta, previo },
     financiero: {
       ingresos: totalIngresos,
       egresos: totalEgresos,
@@ -752,7 +899,7 @@ async function listarPlanillas(_, f = {}) {
   // equivalente en PostgreSQL y ademas funciona en el motor en memoria de las
   // pruebas, que no resuelve el alias de la subconsulta externa.
   return await db.prepare(`
-    SELECT p.*, COUNT(d.id) AS empleados
+    SELECT p.*, COUNT(d.id) AS empleados, COALESCE(SUM(d.comisiones),0) AS total_comisiones
     FROM planillas p
     LEFT JOIN planilla_detalle d ON d.planilla_id = p.id
     WHERE ${condiciones.join(' AND ')}
@@ -770,55 +917,275 @@ async function obtenerPlanilla(_, id) {
     LEFT JOIN empleados e ON e.id = d.empleado_id
     WHERE d.planilla_id = ?
     ORDER BY e.nombre`).all(id);
-  return { ...cabecera, detalle };
+  const viaticos = await db.prepare(`
+    SELECT pm.empleado_id, v.id, v.fecha, v.destino, v.motivo, pm.monto, v.estado, v.viaje_id, bv.estado AS viaje_estado
+    FROM planilla_movimientos pm
+    JOIN viaticos v ON v.id = pm.movimiento_id
+    LEFT JOIN bitacora_viajes bv ON bv.id = v.viaje_id
+    WHERE pm.planilla_id = ? AND pm.tipo = 'VIATICO'
+    ORDER BY v.fecha, v.id`).all(id);
+  // En una planilla abierta, un viático de un viaje sin completar no cuenta
+  // aunque se haya reservado antes de existir la regla.
+  const abierta = String(cabecera.estado || '').toUpperCase() !== 'PAGADA';
+  const validos = viaticos.filter(v => !abierta || !v.viaje_id || v.viaje_estado === 'COMPLETADO');
+  let quitado = 0;
+  detalle.forEach(d => {
+    d.viaticosMovimientos = validos
+      .filter(v => String(v.empleado_id) === String(d.empleado_id))
+      .map(v => ({ ...v, monto: numero(v.monto) }));
+    if (abierta) {
+      const descartado = viaticos
+        .filter(v => !validos.includes(v) && String(v.empleado_id) === String(d.empleado_id))
+        .reduce((s, v) => s + numero(v.monto), 0);
+      d.viaticos = Math.max(0, numero(d.viaticos) - descartado);
+      quitado += descartado;
+    }
+  });
+  return {
+    ...cabecera,
+    total_viaticos: Math.max(0, numero(cabecera.total_viaticos) - quitado),
+    total_a_pagar: numero(cabecera.total_a_pagar) - quitado,
+    detalle
+  };
+}
+
+function validarPeriodoPlanilla(valor) {
+  const periodo = texto(valor);
+  if (!periodo || !/^\d{4}-(0[1-9]|1[0-2])$/.test(periodo)) {
+    throw new Error('El período de planilla debe tener formato AAAA-MM.');
+  }
+  return periodo;
+}
+
+// Los viáticos capturados en la bitácora (campo "viatico" del viaje) se vuelven
+// registros pendientes de la tabla viaticos, una sola vez por viaje, para que
+// la planilla y la pestaña Viáticos los vean.
+async function registrarViaticosDeViajes(db) {
+  const viajes = await db.prepare(`
+    SELECT b.id, b.fecha, b.conductor_id, b.destino, b.viatico
+    FROM bitacora_viajes b
+    LEFT JOIN viaticos v ON v.viaje_id = b.id
+    WHERE COALESCE(b.viatico,0) > 0
+      AND b.conductor_id IS NOT NULL
+      AND b.estado = 'COMPLETADO'
+      AND v.id IS NULL
+    ORDER BY b.id`).all();
+  for (const b of viajes) {
+    const f = b.fecha instanceof Date
+      ? `${b.fecha.getFullYear()}-${String(b.fecha.getMonth() + 1).padStart(2, '0')}-${String(b.fecha.getDate()).padStart(2, '0')}`
+      : String(b.fecha).slice(0, 10);
+    try {
+      await guardarViatico(null, {
+        conductor_id: b.conductor_id, viaje_id: b.id, fecha: f, destino: b.destino || '',
+        motivo: `Viático del viaje #${b.id}`, monto: numero(b.viatico), liquidado: 0
+      });
+    } catch (err) {
+      console.error('No se pudo registrar el viático del viaje', b.id, err.message);
+    }
+  }
+}
+
+async function obtenerMovimientosPendientesPlanilla(db, periodo, planillaId = null) {
+  await registrarViaticosDeViajes(db);
+  const parametros = { periodo, planilla_id: entero(planillaId) || 0 };
+  const [comisiones, viaticos, sinVincularComisiones, sinVincularViaticos] = await Promise.all([
+    db.prepare(`
+      SELECT c.id, e.id AS empleado_id, c.fecha, c.concepto, c.monto,
+             c.tipo, c.base_calculo, c.valor_calculo
+      FROM comisiones c
+      JOIN empleados e ON e.conductor_id = c.conductor_id
+      LEFT JOIN planilla_movimientos pm
+        ON pm.tipo='COMISION' AND pm.movimiento_id=c.id
+      WHERE c.periodo=@periodo
+        AND COALESCE(c.estado,'PENDIENTE')<>'PAGADA'
+        AND (pm.id IS NULL OR pm.planilla_id=@planilla_id)
+      ORDER BY c.fecha, c.id`).all(parametros),
+    db.prepare(`
+      SELECT v.id, COALESCE(v.empleado_id, e.id) AS empleado_id,
+             v.fecha, v.destino, v.motivo, v.monto
+      FROM viaticos v
+      LEFT JOIN empleados e ON e.conductor_id=v.conductor_id
+      LEFT JOIN bitacora_viajes bv ON bv.id=v.viaje_id
+      LEFT JOIN planilla_movimientos pm
+        ON pm.tipo='VIATICO' AND pm.movimiento_id=v.id
+      WHERE COALESCE(v.liquidado,false)=false
+        AND (v.viaje_id IS NULL OR bv.estado='COMPLETADO')
+        AND COALESCE(v.estado,'PENDIENTE')<>'LIQUIDADO'
+        AND COALESCE(v.empleado_id,e.id) IS NOT NULL
+        AND (pm.id IS NULL OR pm.planilla_id=@planilla_id)
+      ORDER BY v.fecha, v.id`).all(parametros),
+    db.prepare(`
+      SELECT COUNT(*) total
+      FROM comisiones c
+      LEFT JOIN empleados e ON e.conductor_id=c.conductor_id
+      WHERE c.periodo=@periodo
+        AND COALESCE(c.estado,'PENDIENTE')<>'PAGADA'
+        AND e.id IS NULL`).get({ periodo }),
+    db.prepare(`
+      SELECT COUNT(*) total
+      FROM viaticos v
+      LEFT JOIN empleados e ON e.conductor_id=v.conductor_id
+      LEFT JOIN bitacora_viajes bv ON bv.id=v.viaje_id
+      WHERE COALESCE(v.liquidado,false)=false
+        AND (v.viaje_id IS NULL OR bv.estado='COMPLETADO')
+        AND COALESCE(v.estado,'PENDIENTE')<>'LIQUIDADO'
+        AND v.empleado_id IS NULL
+        AND e.id IS NULL`).get({ periodo })
+  ]);
+  return {
+    comisiones: comisiones.map(m => ({ ...m, monto: numero(m.monto) })),
+    viaticos: viaticos.map(m => ({ ...m, monto: numero(m.monto) })),
+    sinVincular: {
+      comisiones: numero(sinVincularComisiones.total),
+      viaticos: numero(sinVincularViaticos.total)
+    }
+  };
+}
+
+async function movimientosPendientesPlanilla(_, f = {}) {
+  const periodo = validarPeriodoPlanilla(f.periodo);
+  return obtenerMovimientosPendientesPlanilla(obtenerDB(), periodo, f.planilla_id);
 }
 
 function calcularFila(fila) {
   const salario = numero(fila.salario);
   const horasExtra = numero(fila.horas_extra);
   const bonificaciones = numero(fila.bonificaciones);
+  const comisiones = numero(fila.comisiones);
+  const viaticos = numero(fila.viaticos);
   const deducciones = numero(fila.deducciones);
   return {
     empleado_id: entero(fila.empleado_id),
     salario,
     horas_extra: horasExtra,
     bonificaciones,
+    comisiones,
+    viaticos,
     deducciones,
-    bruto: salario + horasExtra + bonificaciones,
-    neto: salario + horasExtra + bonificaciones - deducciones
+    bruto: salario + horasExtra + bonificaciones + comisiones,
+    neto: salario + horasExtra + bonificaciones + comisiones - deducciones
   };
 }
 
 // Guarda (crea o actualiza) una planilla con su detalle completo.
 async function guardarPlanilla(_, d) {
   const db = obtenerDB();
+  const periodo = validarPeriodoPlanilla(d.periodo);
+  const estado = texto(d.estado) === 'PAGADA' ? 'PAGADA' : 'BORRADOR';
   let idPlanilla = entero(d.id);
+  const movimientosEditados = [];
   await db.transaction(async () => {
     if (idPlanilla) {
+      const existente = await db.prepare('SELECT estado FROM planillas WHERE id=?').get(idPlanilla);
+      if (!existente) throw new Error('La planilla solicitada no existe.');
+      if (existente.estado === 'PAGADA') throw new Error('No se puede modificar una planilla que ya fue pagada.');
       await db.prepare('UPDATE planillas SET periodo=?, fecha_pago=?, observacion=?, estado=? WHERE id=?')
-        .run(texto(d.periodo), texto(d.fecha_pago), texto(d.observacion), texto(d.estado) || 'BORRADOR', idPlanilla);
+        .run(periodo, texto(d.fecha_pago), texto(d.observacion), estado, idPlanilla);
     } else {
       const res = await db.prepare('INSERT INTO planillas (periodo, fecha_pago, observacion, estado) VALUES (?, ?, ?, ?)')
-        .run(texto(d.periodo), texto(d.fecha_pago), texto(d.observacion), texto(d.estado) || 'BORRADOR');
+        .run(periodo, texto(d.fecha_pago), texto(d.observacion), estado);
       idPlanilla = res.lastInsertRowid;
     }
 
+    const movimientos = await obtenerMovimientosPendientesPlanilla(db, periodo, idPlanilla);
+    const movimientosPorTipo = {
+      COMISION: movimientos.comisiones,
+      VIATICO: movimientos.viaticos
+    };
+    const editados = new Set();
+    for (const ajuste of Array.isArray(d.movimientos) ? d.movimientos : []) {
+      const tipo = texto(ajuste.tipo).toUpperCase();
+      const idMovimiento = entero(ajuste.id);
+      const movimiento = movimientosPorTipo[tipo]?.find(m => String(m.id) === String(idMovimiento));
+      if (!movimiento) throw new Error('Un movimiento que intenta editar ya no está pendiente o no pertenece al período.');
+      const clave = `${tipo}:${idMovimiento}`;
+      if (editados.has(clave)) throw new Error('No se puede editar dos veces el mismo movimiento en una planilla.');
+      editados.add(clave);
+      const montoEntrada = typeof ajuste.monto === 'string' ? ajuste.monto.trim() : ajuste.monto;
+      const monto = Number(montoEntrada);
+      if (montoEntrada === '' || montoEntrada === null || montoEntrada === undefined || !Number.isFinite(monto) || monto < 0) {
+        throw new Error('El monto de comisiones y viáticos debe ser un número igual o mayor que cero.');
+      }
+      const montoRedondeado = Math.round(monto * 100) / 100;
+      if (tipo === 'COMISION') {
+        const base = numero(movimiento.base_calculo);
+        let valorCalculo;
+        if (movimiento.tipo === 'FIJO') {
+          valorCalculo = montoRedondeado;
+        } else if (base === 0 && montoRedondeado !== 0) {
+          throw new Error('No se puede ajustar una comisión porcentual o por kilómetro cuya base de cálculo es cero.');
+        } else {
+          valorCalculo = base === 0 ? 0 : (movimiento.tipo === 'POR_KM' ? montoRedondeado / base : (montoRedondeado * 100) / base);
+        }
+        await db.prepare('UPDATE comisiones SET monto=?, valor_calculo=? WHERE id=?').run(montoRedondeado, valorCalculo, idMovimiento);
+        movimiento.valor_calculo = valorCalculo;
+      } else {
+        await db.prepare('UPDATE viaticos SET monto=? WHERE id=?').run(montoRedondeado, idMovimiento);
+      }
+      movimiento.monto = montoRedondeado;
+      movimientosEditados.push({ tipo, id: idMovimiento, monto: montoRedondeado });
+    }
+
+    const comisionesPorEmpleado = new Map();
+    const viaticosPorEmpleado = new Map();
+    const agrupar = (mapa, registros) => {
+      for (const movimiento of registros) {
+        const clave = String(movimiento.empleado_id);
+        if (!mapa.has(clave)) mapa.set(clave, []);
+        mapa.get(clave).push(movimiento);
+      }
+    };
+    agrupar(comisionesPorEmpleado, movimientos.comisiones);
+    agrupar(viaticosPorEmpleado, movimientos.viaticos);
+
+    await db.prepare('DELETE FROM planilla_movimientos WHERE planilla_id=?').run(idPlanilla);
     await db.prepare('DELETE FROM planilla_detalle WHERE planilla_id=?').run(idPlanilla);
-    const insertar = await db.prepare('INSERT INTO planilla_detalle (planilla_id, empleado_id, salario, horas_extra, bonificaciones, deducciones, neto) VALUES (?, ?, ?, ?, ?, ?, ?)');
-    let bruto = 0, deducciones = 0, neto = 0;
-    (d.detalle || []).forEach(fila => {
-      const c = calcularFila(fila);
-      if (!c.empleado_id) return;
-      insertar.run(idPlanilla, c.empleado_id, c.salario, c.horas_extra, c.bonificaciones, c.deducciones, c.neto);
+    const insertarDetalle = db.prepare(`
+      INSERT INTO planilla_detalle
+        (planilla_id, empleado_id, salario, horas_extra, bonificaciones, comisiones, viaticos, deducciones, neto)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+    const insertarMovimiento = db.prepare(`
+      INSERT INTO planilla_movimientos (planilla_id, empleado_id, tipo, movimiento_id, monto)
+      VALUES (?, ?, ?, ?, ?)`);
+    let bruto = 0, deducciones = 0, neto = 0, totalViaticos = 0;
+    const empleadosIncluidos = new Set();
+    for (const fila of d.detalle || []) {
+      const empleadoId = entero(fila.empleado_id);
+      if (!empleadoId) continue;
+      if (empleadosIncluidos.has(empleadoId)) {
+        throw new Error('Un empleado no puede aparecer dos veces en el detalle de la planilla.');
+      }
+      empleadosIncluidos.add(empleadoId);
+      const comisionesEmpleado = comisionesPorEmpleado.get(String(empleadoId)) || [];
+      const viaticosEmpleado = viaticosPorEmpleado.get(String(empleadoId)) || [];
+      const c = calcularFila({
+        ...fila,
+        comisiones: comisionesEmpleado.reduce((s, m) => s + m.monto, 0),
+        viaticos: viaticosEmpleado.reduce((s, m) => s + m.monto, 0)
+      });
+      await insertarDetalle.run(idPlanilla, c.empleado_id, c.salario, c.horas_extra, c.bonificaciones, c.comisiones, c.viaticos, c.deducciones, c.neto);
       bruto += c.bruto;
       deducciones += c.deducciones;
       neto += c.neto;
-    });
+      totalViaticos += c.viaticos;
+      for (const movimiento of comisionesEmpleado) {
+        await insertarMovimiento.run(idPlanilla, c.empleado_id, 'COMISION', movimiento.id, movimiento.monto);
+      }
+      for (const movimiento of viaticosEmpleado) {
+        await insertarMovimiento.run(idPlanilla, c.empleado_id, 'VIATICO', movimiento.id, movimiento.monto);
+      }
+    }
 
-    await db.prepare('UPDATE planillas SET total_bruto=?, total_deducciones=?, total_neto=? WHERE id=?')
-      .run(bruto, deducciones, neto, idPlanilla);
+    const aPagar = neto + totalViaticos;
+    await db.prepare('UPDATE planillas SET total_bruto=?, total_deducciones=?, total_neto=?, total_viaticos=?, total_a_pagar=? WHERE id=?')
+      .run(bruto, deducciones, neto, totalViaticos, aPagar, idPlanilla);
+    if (estado === 'PAGADA') await liquidarMovimientosPlanilla(db, idPlanilla);
   })();
-  await registrarAuditoria('planilla', d.id ? 'ACTUALIZAR' : 'CREAR', idPlanilla, `Planilla ${d.periodo || ''} guardada`);
+  for (const movimiento of movimientosEditados) {
+    const modulo = movimiento.tipo === 'COMISION' ? 'comisiones' : 'viaticos';
+    await registrarAuditoria(modulo, 'ACTUALIZAR', movimiento.id, `Monto ajustado desde planilla ${periodo}: ${movimiento.monto}`);
+  }
+  await registrarAuditoria('planilla', d.id ? 'ACTUALIZAR' : 'CREAR', idPlanilla, `Planilla ${periodo} guardada`);
   return { ok: true, id: idPlanilla };
 }
 
@@ -847,10 +1214,35 @@ async function generarPlanilla(_, d) {
   return { ...result, empleados: detalle.length };
 }
 
+async function liquidarMovimientosPlanilla(db, idPlanilla) {
+  const movimientos = await db.prepare('SELECT tipo, movimiento_id FROM planilla_movimientos WHERE planilla_id=?').all(idPlanilla);
+  for (const movimiento of movimientos) {
+    if (movimiento.tipo === 'COMISION') {
+      const actual = await db.prepare('SELECT estado FROM comisiones WHERE id=?').get(movimiento.movimiento_id);
+      if (!actual || actual.estado === 'PAGADA') {
+        throw new Error('Una comisión vinculada ya fue pagada o eliminada. Revise la planilla antes de liquidarla.');
+      }
+      await db.prepare("UPDATE comisiones SET estado='PAGADA', fecha_pago=COALESCE(fecha_pago, date('now')) WHERE id=?").run(movimiento.movimiento_id);
+    } else {
+      const actual = await db.prepare('SELECT liquidado, estado FROM viaticos WHERE id=?').get(movimiento.movimiento_id);
+      if (!actual || numero(actual.liquidado) === 1 || actual.estado === 'LIQUIDADO') {
+        throw new Error('Un viático vinculado ya fue liquidado o eliminado. Revise la planilla antes de pagarla.');
+      }
+      await db.prepare("UPDATE viaticos SET liquidado=1, estado='LIQUIDADO' WHERE id=?").run(movimiento.movimiento_id);
+    }
+  }
+}
+
 async function pagarPlanilla(_, id) {
   const db = obtenerDB();
-  await db.prepare("UPDATE planillas SET estado='PAGADA', fecha_pago=COALESCE(fecha_pago, date('now')) WHERE id=?").run(id);
-  await registrarAuditoria('planilla', 'PAGAR', id, 'Planilla marcada como pagada');
+  const planilla = await db.prepare('SELECT estado FROM planillas WHERE id=?').get(id);
+  if (!planilla) throw new Error('La planilla solicitada no existe.');
+  if (planilla.estado === 'PAGADA') return { ok: true, id };
+  await db.transaction(async () => {
+    await liquidarMovimientosPlanilla(db, id);
+    await db.prepare("UPDATE planillas SET estado='PAGADA', fecha_pago=COALESCE(fecha_pago, date('now')) WHERE id=?").run(id);
+  })();
+  await registrarAuditoria('planilla', 'PAGAR', id, 'Planilla marcada como pagada; comisiones y viáticos vinculados liquidados');
   return { ok: true, id };
 }
 
@@ -1464,6 +1856,10 @@ const operaciones = {
   'comisiones:pagar_conductor': pagarComisionesDelConductor,
   'comisiones:eliminar': eliminarComision,
   'comisiones:generar': generarComisiones,
+  'tarifas_destino:listar': listarTarifasDestino,
+  'tarifas_destino:buscar': tarifaDeRuta,
+  'tarifas_destino:guardar': guardarTarifaDestino,
+  'tarifas_destino:eliminar': eliminarTarifaDestino,
   // Planilla
   'planilla:listar': listarPlanillas,
   'planilla:obtener': obtenerPlanilla,
@@ -1472,6 +1868,7 @@ const operaciones = {
   'planilla:pagar': pagarPlanilla,
   'planilla:eliminar': eliminarPlanilla,
   'planilla:sugerencia': sugerenciaPeriodo,
+  'planilla:movimientos_pendientes': movimientosPendientesPlanilla,
   // Usuarios, roles y autenticación
   'usuarios:estado_instalacion': estadoInstalacion,
   'usuarios:instalar': instalarSistema,
@@ -1505,4 +1902,3 @@ const operaciones = {
 };
 
 module.exports = { operaciones };
-
