@@ -10,7 +10,7 @@ const ARCHIVO = path.join(RAIZ, 'respaldos', 'base-20260928-2249.json');
 const TABLAS = [
   'configuracion', 'clientes', 'vehiculos', 'conductores', 'empleados',
   'ingresos', 'egresos', 'combustible', 'bitacora_viajes', 'planillas',
-  'planilla_detalle', 'viaticos', 'comisiones', 'usuarios',
+  'planilla_detalle', 'viaticos', 'comisiones', 'planilla_movimientos', 'usuarios',
   'movimientos_auditoria'
 ];
 
@@ -42,12 +42,12 @@ async function restaurarRespaldoInicial() {
 
   const respaldo = JSON.parse(fs.readFileSync(ARCHIVO, 'utf8'));
   const tablas = respaldo.tablas || {};
-  const operativas = ['clientes', 'vehiculos', 'conductores', 'empleados', 'ingresos', 'egresos', 'combustible', 'bitacora_viajes', 'planillas', 'planilla_detalle', 'viaticos', 'comisiones', 'movimientos_auditoria'];
+  const operativas = ['clientes', 'vehiculos', 'conductores', 'empleados', 'ingresos', 'egresos', 'combustible', 'bitacora_viajes', 'planillas', 'planilla_detalle', 'viaticos', 'comisiones', 'planilla_movimientos', 'movimientos_auditoria'];
   const totalDatos = (await Promise.all(operativas.map((t) => contar(pool, t)))).reduce((a, b) => a + b, 0);
 
   // Base completamente nueva: recuperar el estado completo del respaldo.
   if (totalDatos === 0) {
-    const orden = ['configuracion', 'clientes', 'vehiculos', 'conductores', 'empleados', 'ingresos', 'egresos', 'combustible', 'bitacora_viajes', 'planillas', 'planilla_detalle', 'viaticos', 'comisiones', 'usuarios', 'movimientos_auditoria'];
+    const orden = ['configuracion', 'clientes', 'vehiculos', 'conductores', 'empleados', 'ingresos', 'egresos', 'combustible', 'bitacora_viajes', 'planillas', 'planilla_detalle', 'viaticos', 'comisiones', 'planilla_movimientos', 'usuarios', 'movimientos_auditoria'];
     const insertados = {};
     for (const tabla of orden) insertados[tabla] = await insertarFilas(pool, tabla, tablas[tabla]);
     console.log('[postgres] Respaldo inicial recuperado sin sobrescribir una base existente:', insertados);

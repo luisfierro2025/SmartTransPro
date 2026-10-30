@@ -117,7 +117,7 @@ async function cargarDatosEjemplo() {
   return { ok: true, insertados };
 }
 
-const OPERATIVAS = ['planilla_detalle', 'planillas', 'viaticos', 'comisiones', 'ingresos', 'egresos', 'combustible', 'bitacora_viajes', 'movimientos_auditoria'];
+const OPERATIVAS = ['planilla_movimientos', 'planilla_detalle', 'planillas', 'viaticos', 'comisiones', 'ingresos', 'egresos', 'combustible', 'bitacora_viajes', 'movimientos_auditoria'];
 const CATALOGOS = ['clientes', 'vehiculos', 'conductores', 'empleados'];
 
 async function limpiarDatos(alcance) {
@@ -151,10 +151,9 @@ async function respaldarBaseDatos() {
 }
 
 module.exports = {
-  // Antes de entregar la base se verifica que el esquema tenga las columnas que
-  // el código usa (viaticos.conductor_id / viaticos.viaje_id). Si la base quedó
-  // desactualizada respecto de supabase/migrations, se corrige y se avisa por
-  // consola en vez de fallar con "column ... does not exist".
+  // Antes de entregar la base se verifican las columnas que usa la aplicación
+  // y las tablas aportadas por las migraciones; así un esquema antiguo se repara
+  // al arrancar y no falla al consultar movimientos de planilla.
   inicializarBaseDatos: async () => {
     await asegurarEsquema();
     // Tampoco se crea ninguna cuenta: si "usuarios" queda vacía, la interfaz

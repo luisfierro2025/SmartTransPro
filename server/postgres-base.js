@@ -45,7 +45,9 @@ if (types && typeof types.setTypeParser === 'function') {
 //   6 -> supabase/migrations/0006_viaticos_viaje_unico.sql (un viático por viaje)
 //   7 -> supabase/migrations/0007_monitoreo_gps.sql (dispositivos_gps y posiciones_gps)
 //   8 -> supabase/migrations/0008_documentos_viajes.sql (documentos de Bitácora)
-const VERSION_ESQUEMA = 8;
+//   9 -> supabase/migrations/0009_planilla_comisiones_viaticos.sql (movimientos vinculados a planilla)
+//  10 -> supabase/migrations/0010_tarifas_destino.sql (comision por destino origen-destino)
+const VERSION_ESQUEMA = 10;
 let pool = null;
 let clienteEnTransaccion = null;
 
@@ -263,6 +265,11 @@ function contar(tabla) {
 // constancia en el log de lo que hubo que corregir.
 // --------------------------------------------------------------------------
 const COLUMNAS_AGREGADAS = [
+  ['empleados', 'conductor_id', 'bigint references conductores(id) on delete set null'],
+  ['planillas', 'total_viaticos', 'numeric(12,2) not null default 0'],
+  ['planillas', 'total_a_pagar', 'numeric(12,2) not null default 0'],
+  ['planilla_detalle', 'comisiones', 'numeric(12,2) not null default 0'],
+  ['planilla_detalle', 'viaticos', 'numeric(12,2) not null default 0'],
   ['viaticos', 'conductor_id', 'bigint references conductores(id)'],
   ['viaticos', 'viaje_id', 'bigint references bitacora_viajes(id)'],
   // Ficha de documentos del conductor (migración 0004). Sin estas cuatro
@@ -350,6 +357,33 @@ const TABLAS_AGREGADAS = [
       'create index if not exists idx_sesiones_vencimiento on sesiones(expira_en_ms)'
     ]
   },
+  {
+    tabla: 'planilla_movimientos',
+    definicion: `create table if not exists planilla_movimientos (
+      id bigint generated always as identity primary key,
+      planilla_id bigint not null references planillas(id) on delete cascade,
+      empleado_id bigint not null references empleados(id),
+      tipo text not null check (tipo in ('COMISION', 'VIATICO')),
+      movimiento_id bigint not null,
+      monto numeric(12,2) not null default 0,
+      created_at timestamptz not null default now(),
+      unique (tipo, movimiento_id)
+    )`,
+    indices: ['create index if not exists idx_planilla_movimientos_planilla on planilla_movimientos(planilla_id)']
+  },
+  {
+    tabla: 'tarifas_destino',
+    definicion: `create table if not exists tarifas_destino (
+      id bigint generated always as identity primary key,
+      origen text not null,
+      destino text not null,
+      valor numeric(12,2) not null default 0,
+      activo integer not null default 1,
+      observacion text,
+      created_at timestamptz not null default now()
+    )`,
+    indices: ['create unique index if not exists idx_tarifas_destino_ruta on tarifas_destino(lower(origen), lower(destino))']
+  },
   // Monitoreo por GPS de teléfonos (migración 0007).
   {
     tabla: 'dispositivos_gps',
@@ -386,6 +420,7 @@ const TABLAS_AGREGADAS = [
 ];
 
 const INDICES_AGREGADOS = [
+  'create unique index if not exists idx_empleados_conductor_unico on empleados(conductor_id)',
   'create index if not exists idx_viaticos_conductor on viaticos(conductor_id)',
   'create index if not exists idx_viaticos_viaje on viaticos(viaje_id)',
   // Un viaje no se puede cobrar con dos viáticos (índice parcial: los viáticos
@@ -420,6 +455,11 @@ function asegurarEsquema() {
         }
         for (const sql of indices) await pool.query(sql);
       }
+      const totalAPagarExistia = await pool.query(
+        `select 1 from information_schema.columns
+          where table_schema = current_schema()
+            and table_name = 'planillas' and column_name = 'total_a_pagar'`
+      );
       for (const [tabla, columna, definicion] of COLUMNAS_AGREGADAS) {
         const existe = await pool.query(
           `select 1 from information_schema.columns
@@ -431,6 +471,9 @@ function asegurarEsquema() {
         // La definición es fija (no viene del usuario): se interpola a propósito.
         await pool.query(`alter table ${tabla} add column if not exists ${columna} ${definicion}`);
         console.log(`[postgres] esquema corregido: se agregó ${tabla}.${columna}`);
+      }
+      if (!totalAPagarExistia.rowCount) {
+        await pool.query('UPDATE planillas SET total_a_pagar = total_neto + total_viaticos');
       }
       for (const sql of INDICES_AGREGADOS) {
         try {

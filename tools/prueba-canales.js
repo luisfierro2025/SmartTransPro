@@ -70,11 +70,15 @@ const DATOS = {
   'dashboard:tablero': {},
   'planilla:guardar': { periodo: '2026-09', fecha_pago: '2026-09-30', detalle: [] },
   'planilla:generar': { periodo: '2026-09', fecha_pago: '2026-09-30' },
+  'planilla:movimientos_pendientes': { periodo: '2026-09' },
   // La comisión se liga a un conductor y a un viaje reales: así la prueba cubre
   // el JOIN de comisiones:listar (conductor_nombre / viaje_*) y no solo el INSERT.
   'comisiones:guardar': { fecha: '2026-09-25', conductor_id: 1, viaje_id: 1, periodo: '2026-09', concepto: 'Comisión de prueba', tipo: 'PORCENTAJE', base_calculo: 10000, valor_calculo: 5 },
   'comisiones:generar': { periodo: '2026-09', tipo: 'POR_KM', valor_calculo: 2 },
   'comisiones:pagar_conductor': { conductor_id: 1, desde: '2026-09-01', hasta: '2026-09-30' },
+  'tarifas_destino:guardar': { origen: 'Managua', destino: 'Leon', valor: 1200 },
+  'tarifas_destino:listar': {},
+  'tarifas_destino:buscar': { origen: 'managua', destino: 'LEON' },
   'configuracion:guardar': { nombre_empresa: 'Transportes Fierro', moneda: 'NIO', simbolo: 'C$' },
   'finanzas:categorias': { tipo: 'ingresos' }
 };
@@ -124,6 +128,7 @@ async function ejecutar() {
   // recién creado para que la prueba consulta un registro que existe.
   descartables['bitacora:obtener'] = descartables['bitacora:eliminar'];
   descartables['comisiones:eliminar'] = await crear('comisiones:guardar', DATOS['comisiones:guardar']);
+  descartables['tarifas_destino:eliminar'] = await crear('tarifas_destino:guardar', { origen: 'Temporal A', destino: 'Temporal B', valor: 10 });
   // Sin empleados no hay planilla que generar.
   await crear('empleados:guardar', { nombre: 'Temporal', cargo: 'Chofer', salario_base: 100, activo: 1 });
 

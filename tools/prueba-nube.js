@@ -116,9 +116,9 @@ async function ejecutar() {
   const tablas = await ejecutarSQL(
     "SELECT table_name FROM information_schema.tables WHERE table_schema='public' ORDER BY table_name"
   );
-  const esperadas = ['bitacora_viajes','clientes','combustible','configuracion','conductores','egresos','empleados','ingresos','movimientos_auditoria','perfiles','planilla_detalle','planillas','vehiculos','viaticos','comisiones'];
+  const esperadas = ['bitacora_viajes','clientes','combustible','configuracion','conductores','egresos','empleados','ingresos','movimientos_auditoria','perfiles','planilla_detalle','planilla_movimientos','planillas','vehiculos','viaticos','comisiones'];
   const faltantes = esperadas.filter((t) => !tablas.some((x) => x.table_name === t));
-  verificar('se crean las 15 tablas del sistema', faltantes.length === 0, `faltan: ${faltantes.join(', ')}`);
+  verificar(`se crean las ${esperadas.length} tablas del sistema`, faltantes.length === 0, `faltan: ${faltantes.join(', ')}`);
 
   // --- 3) Consultas reales de la aplicación --------------------------------
   console.log('\n3) Consultas reales de la aplicación');
@@ -238,4 +238,3 @@ if (require.main === module) {
     .then((ok) => process.exit(ok ? 0 : 1))
     .catch((e) => { console.error('\nFallo inesperado:', e); process.exit(1); });
 }
-
