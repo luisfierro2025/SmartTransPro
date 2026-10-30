@@ -53,7 +53,8 @@
       generar: 'planilla:generar',
       pagar: 'planilla:pagar',
       eliminar: 'planilla:eliminar',
-      sugerencia: 'planilla:sugerencia'
+      sugerencia: 'planilla:sugerencia',
+      movimientosPendientes: 'planilla:movimientos_pendientes'
     },
     comisiones: {
       listar: 'comisiones:listar',
@@ -63,6 +64,12 @@
       pagarConductor: 'comisiones:pagar_conductor',
       eliminar: 'comisiones:eliminar',
       generar: 'comisiones:generar'
+    },
+    tarifasDestino: {
+      listar: 'tarifas_destino:listar',
+      buscar: 'tarifas_destino:buscar',
+      guardar: 'tarifas_destino:guardar',
+      eliminar: 'tarifas_destino:eliminar'
     },
     usuarios: {
       estadoInstalacion: 'usuarios:estado_instalacion',

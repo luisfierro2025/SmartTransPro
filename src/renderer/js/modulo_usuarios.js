@@ -36,9 +36,7 @@ function claseRol(rol) {
 
 function fechaLegible(valor) {
   if (!valor) return '<span style="color:var(--muted)">Nunca</span>';
-  const fecha = new Date(String(valor).replace(' ', 'T'));
-  if (Number.isNaN(fecha.getTime())) return esc(valor);
-  return esc(new Intl.DateTimeFormat('es-NI', { dateStyle: 'medium', timeStyle: 'short' }).format(fecha));
+  return esc(formatearFechaHora(valor));
 }
 
 async function renderUsuarios() {

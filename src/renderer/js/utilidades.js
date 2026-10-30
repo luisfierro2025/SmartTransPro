@@ -13,6 +13,33 @@ function debounce(fn, espera = 400) {
   };
 }
 
+function formatearFecha(valor) {
+  if (valor === undefined || valor === null || String(valor).trim() === '') return '-';
+  const texto = String(valor).trim();
+  const iso = texto.match(/^(\d{4})-(\d{2})-(\d{2})(?:$|T|\s)/);
+  if (iso) {
+    const [, anio, mes, dia] = iso;
+    const valida = new Date(Date.UTC(Number(anio), Number(mes) - 1, Number(dia)));
+    if (valida.getUTCFullYear() === Number(anio) && valida.getUTCMonth() + 1 === Number(mes) && valida.getUTCDate() === Number(dia)) {
+      return `${dia}-${mes}-${anio}`;
+    }
+  }
+  const fecha = valor instanceof Date ? valor : new Date(texto.replace(' ', 'T'));
+  if (Number.isNaN(fecha.getTime())) return texto;
+  const partes = new Intl.DateTimeFormat('es-NI', { day: '2-digit', month: '2-digit', year: 'numeric' })
+    .formatToParts(fecha)
+    .reduce((resultado, parte) => ({ ...resultado, [parte.type]: parte.value }), {});
+  return `${partes.day}-${partes.month}-${partes.year}`;
+}
+
+function formatearFechaHora(valor) {
+  if (valor === undefined || valor === null || String(valor).trim() === '') return '-';
+  const fecha = valor instanceof Date ? valor : new Date(String(valor).trim().replace(' ', 'T'));
+  if (Number.isNaN(fecha.getTime())) return String(valor);
+  const hora = new Intl.DateTimeFormat('es-NI', { hour: '2-digit', minute: '2-digit', hour12: false }).format(fecha);
+  return `${formatearFecha(fecha)} ${hora}`;
+}
+
 // Recorre el contenido recién dibujado y, en cada barra de herramientas que
 // tenga un botón "Buscar/Filtrar", activa dos cosas automáticamente:
 //   1) Búsqueda inteligente: el campo de texto dispara la búsqueda solo con
@@ -113,6 +140,7 @@ function resumenDeFiltros(barra) {
       valor = opcion ? opcion.textContent.trim() : '';
     }
     if (!valor) return;
+    if (control.type === 'date') valor = formatearFecha(valor);
     const texto = String(valor).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     const etiquetaTexto = etiqueta.textContent.trim().replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     partes.push(`<strong>${etiquetaTexto}:</strong> ${texto}`);
@@ -137,7 +165,7 @@ function imprimirContenido({ titulo, filtrosTexto, resumenHtml, cuerpoHtml, bita
       || 'SmartTransPro'
   );
   const tituloSeguro = escaparHtmlImpresion(titulo || 'Reporte');
-  const fecha = new Intl.DateTimeFormat('es-NI', { dateStyle: 'long', timeStyle: 'short' }).format(new Date());
+  const fecha = formatearFechaHora(new Date());
   const ventana = window.open('', '_blank', 'width=1024,height=720');
   if (!ventana) {
     mostrarFichaImpresion({
@@ -239,7 +267,7 @@ function imprimirContenido({ titulo, filtrosTexto, resumenHtml, cuerpoHtml, bita
 // usuario lo guarde, revise y luego imprima o envíe.
 function documentoProfesionalHtml({ titulo, subtitulo, filtrosTexto, resumenHtml, cuerpoHtml, piePersonalizado, tamanoPagina }) {
   const nombreEmpresa = (document.getElementById('empresaDestacada') && document.getElementById('empresaDestacada').textContent.trim()) || 'SmartTransPro';
-  const generado = new Intl.DateTimeFormat('es-NI', { dateStyle: 'long', timeStyle: 'short' }).format(new Date());
+  const generado = formatearFechaHora(new Date());
   return `
     <!doctype html>
     <html lang="es">
@@ -292,6 +320,57 @@ function documentoProfesionalHtml({ titulo, subtitulo, filtrosTexto, resumenHtml
       <div class="pie-nota">Documento generado automáticamente por SmartTransPro.</div>
     </body>
     </html>`;
+}
+
+// ---------------------------------------------------------------- reportes de módulos
+// Construye y entrega (vía imprimirComoPdf) el reporte de un listado genérico:
+// filas ya armadas como celdas HTML, columnas con etiqueta y estilo, totales y
+// filtros. La usan Bitácora, Flota, Planilla, Viáticos y Comisiones para no
+// repetir en cada módulo el armado de la tabla del PDF.
+function celdaReporte(valor, opciones = {}) {
+  const alineado = opciones.numero ? ' style="text-align:right"' : '';
+  return `<td${alineado}>${valor === undefined || valor === null || valor === '' ? '-' : valor}</td>`;
+}
+
+async function imprimirListadoModulo({
+  titulo,
+  subtitulo,
+  filtrosTexto = '',
+  resumenCajas = [],
+  columnas,
+  filas,
+  totalesFila = null,
+  cuerpoExtraHtml = '',
+  nombreArchivo,
+  orientacion = 'portrait',
+  tamanoFuente,
+  boton
+}) {
+  const cajaHtml = cajita => `
+    <div class="resumen-caja"><div class="et">${escaparHtmlImpresion(cajita.etiqueta)}</div><div class="val">${cajita.valor}</div></div>`;
+  const resumenHtml = resumenCajas.length
+    ? `<div class="resumen-grid" style="grid-template-columns:repeat(${Math.min(resumenCajas.length, 4)},1fr)">${resumenCajas.map(cajaHtml).join('')}</div>`
+    : '';
+  const cuerpoHtml = !filas.length
+    ? '<p>No hay registros para los filtros seleccionados.</p>'
+    : `
+      <table${tamanoFuente ? ` style="font-size:${tamanoFuente}"` : ''}>
+        <thead>
+          <tr>${columnas.map(c => `<th${c.numero ? ' style="text-align:right"' : ''}>${escaparHtmlImpresion(c.titulo)}</th>`).join('')}</tr>
+        </thead>
+        <tbody>${filas.map(fila => fila.map((celda, i) => celdaReporte(celda, { numero: columnas[i] && columnas[i].numero })).join('')).map(r => `<tr>${r}</tr>`).join('')}</tbody>
+        ${totalesFila ? `<tfoot><tr>${totalesFila.map((celda, i) => `<td${i === 0 ? ` colspan="${totalesFila.length - 1}"` : ' style="text-align:right"'}>${celda}</td>`).join('')}</tr></tfoot>` : ''}
+      </table>
+      ${cuerpoExtraHtml}`;
+  await imprimirComoPdf({
+    titulo,
+    subtitulo,
+    filtrosTexto,
+    resumenHtml,
+    cuerpoHtml,
+    tamanoPagina: orientacion === 'landscape' ? 'letter landscape' : 'letter',
+    nombreArchivo: nombreArchivo || `reporte-${fechaHoy()}`
+  }, boton);
 }
 
 // ---------------------------------------------------------------- ficha de impresión

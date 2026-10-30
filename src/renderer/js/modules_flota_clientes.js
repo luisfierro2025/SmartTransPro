@@ -7,6 +7,7 @@ async function renderFlota(){
         <p>Gestión de unidades de transporte, asignación de choferes, consumo de combustible y monitoreo en vivo.</p>
       </div>
       <div class="page-actions">
+        <button id="btnImprimirFlota" class="btn btn-warning" type="button">🖨️ Imprimir Reporte</button>
         <button id="btnNuevoVehiculo" class="btn primary">+ Registrar Vehículo</button>
         <button id="btnNuevoConductor" class="btn secondary">+ Registrar Conductor</button>
         <button id="btnNuevoCombustible" class="btn btn-warning">+ Cargar Combustible</button>
@@ -29,6 +30,7 @@ async function renderFlota(){
           </div>
           <button id="btnBuscarVehiculo" class="btn primary">Buscar</button>
           <button id="btnLimpiarVehiculo" class="btn">Limpiar</button>
+          <button id="btnAgregarFilaVehiculo" class="btn">+ Agregar en tabla</button>
         </div>
         <div id="tablaVehiculos" class="table-wrap">
           <div class="empty">Cargando unidades...</div>
@@ -45,6 +47,7 @@ async function renderFlota(){
           </div>
           <button id="btnBuscarConductor" class="btn primary">Buscar</button>
           <button id="btnLimpiarConductor" class="btn">Limpiar</button>
+          <button id="btnAgregarFilaConductor" class="btn">+ Agregar en tabla</button>
         </div>
         <div id="tablaConductores" class="table-wrap">
           <div class="empty">Cargando conductores...</div>
@@ -105,6 +108,7 @@ async function renderFlota(){
           </div>
           <button id="btnBuscarCombustible" class="btn primary">Buscar</button>
           <button id="btnLimpiarCombustible" class="btn">Limpiar</button>
+          <button id="btnAgregarFilaCombustible" class="btn">+ Agregar en tabla</button>
         </div>
         <div id="tablaCombustible" class="table-wrap">
           <div class="empty">Cargando registros de combustible...</div>
@@ -132,15 +136,15 @@ async function renderFlota(){
     });
   });
 
+  let filaVehiculoActiva = false;
+  let filaConductorActiva = false;
+  let filaCombustibleActiva = false;
+
   // Funciones Vehículos
   async function cargarVehiculos(){
     const busqueda = document.getElementById('buscarVehiculo').value.trim();
     const datos = await window.api.vehiculos.listar({ busqueda });
     const cont = document.getElementById('tablaVehiculos');
-    if(!datos.length){
-      cont.innerHTML = '<div class="empty">No hay vehículos registrados.</div>';
-      return;
-    }
     cont.innerHTML = `
       <table>
         <thead>
@@ -154,6 +158,19 @@ async function renderFlota(){
           </tr>
         </thead>
         <tbody>
+          ${filaVehiculoActiva ? `
+            <tr class="bitacora-inline-row">
+              <td><input class="bitacora-inline-control" data-campo="codigo" aria-label="Código interno" type="text" required placeholder="Código"></td>
+              <td><input class="bitacora-inline-control" data-campo="placa" aria-label="Placa" type="text" required placeholder="Placa"></td>
+              <td>
+                <input class="bitacora-inline-control" data-campo="marca" aria-label="Marca" type="text" required placeholder="Marca">
+                <input class="bitacora-inline-control" data-campo="modelo" aria-label="Modelo" type="text" required placeholder="Modelo">
+              </td>
+              <td><input class="bitacora-inline-control" data-campo="anio" aria-label="Año" type="number" min="1980" max="2030" placeholder="Año"></td>
+              <td><select class="bitacora-inline-control" data-campo="activo" aria-label="Estado"><option value="1">Activo</option><option value="0">Inactivo</option></select></td>
+              <td><div class="bitacora-inline-actions"><button class="btn btn-sm primary" data-accion="guardar" type="button">Guardar</button><button class="btn btn-sm" data-accion="cancelar" type="button">Cancelar</button></div></td>
+            </tr>` : ''}
+          ${!datos.length && !filaVehiculoActiva ? '<tr><td class="empty" colspan="6">No hay vehículos registrados.</td></tr>' : ''}
           ${datos.map(v => `
             <tr>
               <td><strong>${esc(v.codigo)}</strong></td>
@@ -172,6 +189,37 @@ async function renderFlota(){
         </tbody>
       </table>
     `;
+
+    const filaNueva = cont.querySelector('.bitacora-inline-row');
+    if (filaNueva) {
+      filaNueva.querySelector('[data-accion="cancelar"]').onclick = () => { filaVehiculoActiva = false; cargarVehiculos(); };
+      filaNueva.querySelector('[data-accion="guardar"]').onclick = async event => {
+        const boton = event.currentTarget;
+        const invalidos = [...filaNueva.querySelectorAll('input, select')].find(input => !input.checkValidity());
+        if (invalidos) { invalidos.reportValidity(); return; }
+        const valor = campo => filaNueva.querySelector(`[data-campo="${campo}"]`).value.trim();
+        boton.disabled = true;
+        boton.textContent = 'Guardando...';
+        try {
+          await window.api.vehiculos.guardar({
+            id: null,
+            codigo: valor('codigo'),
+            placa: valor('placa'),
+            marca: valor('marca'),
+            modelo: valor('modelo'),
+            anio: parseInt(valor('anio'), 10) || null,
+            activo: parseInt(valor('activo'), 10)
+          });
+          filaVehiculoActiva = false;
+          await cargarVehiculos();
+        } catch (err) {
+          console.error('No se pudo guardar la unidad desde la tabla:', err);
+          avisarError('No se pudo guardar la unidad', err.message);
+          boton.disabled = false;
+          boton.textContent = 'Guardar';
+        }
+      };
+    }
 
     cont.querySelectorAll('.btnEditarVeh').forEach(b => {
       b.onclick = () => {
@@ -268,10 +316,6 @@ async function renderFlota(){
     const busqueda = document.getElementById('buscarConductor').value.trim();
     const datos = await window.api.conductores.listar({ busqueda });
     const cont = document.getElementById('tablaConductores');
-    if(!datos.length){
-      cont.innerHTML = '<div class="empty">No hay conductores registrados.</div>';
-      return;
-    }
     cont.innerHTML = `
       <table>
         <thead>
@@ -284,6 +328,15 @@ async function renderFlota(){
           </tr>
         </thead>
         <tbody>
+          ${filaConductorActiva ? `
+            <tr class="bitacora-inline-row">
+              <td><input class="bitacora-inline-control" data-campo="nombre" aria-label="Nombre del conductor" type="text" required placeholder="Nombre completo"></td>
+              <td><input class="bitacora-inline-control" data-campo="documento" aria-label="Cédula" type="text" placeholder="Cédula"></td>
+              <td><input class="bitacora-inline-control" data-campo="licencia" aria-label="Número de licencia" type="text" placeholder="Número"></td>
+              <td><select class="bitacora-inline-control" data-campo="activo" aria-label="Estado"><option value="1">Activo</option><option value="0">Inactivo</option></select></td>
+              <td><div class="bitacora-inline-actions"><button class="btn btn-sm primary" data-accion="guardar" type="button">Guardar</button><button class="btn btn-sm" data-accion="cancelar" type="button">Cancelar</button></div></td>
+            </tr>` : ''}
+          ${!datos.length && !filaConductorActiva ? '<tr><td class="empty" colspan="5">No hay conductores registrados.</td></tr>' : ''}
           ${datos.map(c => `
             <tr>
               <td><strong>${esc(c.nombre)}</strong></td>
@@ -302,6 +355,38 @@ async function renderFlota(){
         </tbody>
       </table>
     `;
+
+    const filaNueva = cont.querySelector('.bitacora-inline-row');
+    if (filaNueva) {
+      filaNueva.querySelector('[data-accion="cancelar"]').onclick = () => { filaConductorActiva = false; cargarConductores(); };
+      filaNueva.querySelector('[data-accion="guardar"]').onclick = async event => {
+        const boton = event.currentTarget;
+        const invalidos = [...filaNueva.querySelectorAll('input, select')].find(input => !input.checkValidity());
+        if (invalidos) { invalidos.reportValidity(); return; }
+        const valor = campo => filaNueva.querySelector(`[data-campo="${campo}"]`).value.trim();
+        boton.disabled = true;
+        boton.textContent = 'Guardando...';
+        try {
+          await window.api.conductores.guardar({
+            id: null,
+            nombre: valor('nombre'),
+            documento: valor('documento'),
+            numero_licencia: valor('licencia'),
+            licencia_frontal: null,
+            licencia_trasera: null,
+            carnet_federacion: null,
+            activo: parseInt(valor('activo'), 10)
+          });
+          filaConductorActiva = false;
+          await cargarConductores();
+        } catch (err) {
+          console.error('No se pudo guardar el conductor desde la tabla:', err);
+          avisarError('No se pudo guardar el conductor', err.message);
+          boton.disabled = false;
+          boton.textContent = 'Guardar';
+        }
+      };
+    }
 
     cont.querySelectorAll('.btnDocsCond').forEach(b => {
       b.onclick = () => {
@@ -825,9 +910,13 @@ async function renderFlota(){
     if(elCostoKm) elCostoKm.textContent = resumen.costoKm > 0 ? `${formatoMonto(resumen.costoKm)} /km` : 'N/D';
 
     const cont = document.getElementById('tablaCombustible');
-    if(!datos.length){
-      cont.innerHTML = '<div class="empty">No se encontraron registros de combustible.</div>';
-      return;
+    let vehiculosInline = [];
+    let conductoresInline = [];
+    if (filaCombustibleActiva) {
+      [vehiculosInline, conductoresInline] = await Promise.all([
+        window.api.vehiculos.listar(),
+        window.api.conductores.listar()
+      ]);
     }
 
     cont.innerHTML = `
@@ -847,6 +936,27 @@ async function renderFlota(){
           </tr>
         </thead>
         <tbody>
+          ${filaCombustibleActiva ? `
+            <tr class="bitacora-inline-row">
+              <td>
+                <input class="bitacora-inline-control" data-campo="fecha" aria-label="Fecha" type="date" required value="${fechaHoy()}">
+                <select class="bitacora-inline-control" data-campo="tipo" aria-label="Tipo de combustible"><option value="Diesel">Diésel</option><option value="Gasolina Regular">Gasolina regular</option><option value="Gasolina Súper">Gasolina súper</option></select>
+              </td>
+              <td><select class="bitacora-inline-control" data-campo="vehiculo" aria-label="Vehículo" required><option value="">Seleccione</option>${vehiculosInline.map(v => `<option value="${esc(v.id)}">${esc(v.codigo)} - ${esc(v.placa)}</option>`).join('')}</select></td>
+              <td><select class="bitacora-inline-control" data-campo="conductor" aria-label="Conductor"><option value="">Sin conductor</option>${conductoresInline.map(c => `<option value="${esc(c.id)}">${esc(c.nombre)}</option>`).join('')}</select></td>
+              <td><input class="bitacora-inline-control" data-campo="kilometraje" aria-label="Kilometraje" type="number" min="0" step="0.1" placeholder="Km"></td>
+              <td><input class="bitacora-inline-control" data-campo="cantidad" aria-label="Cantidad" type="number" min="0.01" step="0.01" required placeholder="Cantidad"></td>
+              <td><input class="bitacora-inline-control" data-campo="precio" aria-label="Precio unitario" type="number" min="0.01" step="0.01" required placeholder="Precio"></td>
+              <td><span data-campo="totalVista">${formatoMonto(0)}</span></td>
+              <td><span class="badge badge-neutral">Se calcula</span></td>
+              <td>
+                <input class="bitacora-inline-control bitacora-inline-wide" data-campo="estacion" aria-label="Estación" type="text" placeholder="Estación">
+                <input class="bitacora-inline-control bitacora-inline-wide" data-campo="factura" aria-label="Factura" type="text" placeholder="Factura">
+                <input class="bitacora-inline-control bitacora-inline-wide" data-campo="observacion" aria-label="Observaciones" type="text" placeholder="Observaciones">
+              </td>
+              <td><div class="bitacora-inline-actions"><button class="btn btn-sm primary" data-accion="guardar" type="button">Guardar</button><button class="btn btn-sm" data-accion="cancelar" type="button">Cancelar</button></div></td>
+            </tr>` : ''}
+          ${!datos.length && !filaCombustibleActiva ? '<tr><td class="empty" colspan="10">No se encontraron registros de combustible.</td></tr>' : ''}
           ${datos.map(c => {
             const rend = infoRendimientoPorCarga[c.id];
             let rendHtml = `<span style="color:var(--muted); font-size:12px;">Carga base</span>`;
@@ -859,7 +969,7 @@ async function renderFlota(){
 
             return `
             <tr>
-              <td><strong>${c.fecha}</strong></td>
+              <td><strong>${esc(formatearFecha(c.fecha))}</strong></td>
               <td>
                 <div><span style="font-family:monospace; font-weight:700; background:#eaecf0; padding:2px 6px; border-radius:4px;">${esc(c.placa)}</span></div>
                 <div style="font-size:0.8rem; color:var(--muted);">${esc(c.vehiculo_codigo)} ${esc(c.marca)} ${esc(c.modelo)}</div>
@@ -886,6 +996,52 @@ async function renderFlota(){
         </tbody>
       </table>
     `;
+
+    const filaNueva = cont.querySelector('.bitacora-inline-row');
+    if (filaNueva) {
+      const cantidad = filaNueva.querySelector('[data-campo="cantidad"]');
+      const precio = filaNueva.querySelector('[data-campo="precio"]');
+      const actualizarTotal = () => {
+        const total = (Number(cantidad.value) || 0) * (Number(precio.value) || 0);
+        filaNueva.querySelector('[data-campo="totalVista"]').textContent = formatoMonto(total);
+      };
+      cantidad.oninput = actualizarTotal;
+      precio.oninput = actualizarTotal;
+      filaNueva.querySelector('[data-accion="cancelar"]').onclick = () => { filaCombustibleActiva = false; cargarCombustible(); };
+      filaNueva.querySelector('[data-accion="guardar"]').onclick = async event => {
+        const boton = event.currentTarget;
+        const invalidos = [...filaNueva.querySelectorAll('input, select')].find(input => !input.checkValidity());
+        if (invalidos) { invalidos.reportValidity(); return; }
+        const valor = campo => filaNueva.querySelector(`[data-campo="${campo}"]`).value.trim();
+        const cantidadNum = Number(valor('cantidad')) || 0;
+        const precioNum = Number(valor('precio')) || 0;
+        boton.disabled = true;
+        boton.textContent = 'Guardando...';
+        try {
+          await window.api.combustible.guardar({
+            id: null,
+            fecha: valor('fecha'),
+            vehiculo_id: Number(valor('vehiculo')),
+            conductor_id: valor('conductor') ? Number(valor('conductor')) : null,
+            tipo_combustible: valor('tipo'),
+            kilometraje: Number(valor('kilometraje')) || 0,
+            cantidad: cantidadNum,
+            precio_unitario: precioNum,
+            total: cantidadNum * precioNum,
+            estacion: valor('estacion'),
+            factura: valor('factura'),
+            observacion: valor('observacion')
+          });
+          filaCombustibleActiva = false;
+          await Promise.all([cargarCombustible(), cargarRendimientoVehiculos()]);
+        } catch (err) {
+          console.error('No se pudo guardar el combustible desde la tabla:', err);
+          avisarError('No se pudo guardar la carga', err.message);
+          boton.disabled = false;
+          boton.textContent = 'Guardar';
+        }
+      };
+    }
 
     cont.querySelectorAll('.btnEditarComb').forEach(b => {
       b.onclick = () => {
@@ -1044,7 +1200,117 @@ async function renderFlota(){
 
 
   document.getElementById('btnNuevoVehiculo').onclick = () => modalVehiculo();
+  document.getElementById('btnAgregarFilaVehiculo').onclick = async () => {
+    if (filaVehiculoActiva) { document.querySelector('#tablaVehiculos [data-campo="codigo"]')?.focus(); return; }
+    filaVehiculoActiva = true; await cargarVehiculos();
+    document.querySelector('#tablaVehiculos [data-campo="codigo"]')?.focus();
+  };
+
+  // Reporte PDF de Flota según la pestaña visible: unidades, conductores,
+  // combustible o rendimiento de la flota. Cada uno trae sus datos de nuevo
+  // para que el PDF refleje la búsqueda vigente.
+  document.getElementById('btnImprimirFlota').onclick = async (e) => {
+    const boton = e.currentTarget;
+    const pestanaActiva = content.querySelector('.tab-btn.active');
+    const pestaña = pestanaActiva ? pestanaActiva.dataset.tab : 'tabVehiculos';
+    try {
+      if (pestaña === 'tabConductores') {
+        const busqueda = document.getElementById('buscarConductor').value.trim();
+        const datos = await window.api.conductores.listar({ busqueda });
+        await imprimirListadoModulo({
+          titulo: 'Conductores / Choferes',
+          subtitulo: `${datos.length} ${datos.length === 1 ? 'conductor registrado' : 'conductores registrados'}`,
+          filtrosTexto: busqueda ? `<strong>Búsqueda:</strong> ${esc(busqueda)}` : '',
+          columnas: [
+            { titulo: 'Nombre' }, { titulo: 'Documento / Licencia' }, { titulo: 'Teléfono' },
+            { titulo: 'Licencia' }, { titulo: 'Venc. licencia' }
+          ],
+          filas: datos.map(c => [
+            `<strong>${esc(c.nombre)}</strong>`,
+            esc(c.documento || '-'),
+            esc(c.telefono || '-'),
+            esc(c.licencia || c.numero_licencia || '-'),
+            esc(c.vencimiento_licencia ? formatearFecha(c.vencimiento_licencia) : '-')
+          ]),
+          nombreArchivo: `conductores-${fechaHoy()}`,
+          boton
+        });
+      } else if (pestaña === 'tabCombustible') {
+        const busqueda = document.getElementById('buscarCombustible').value.trim();
+        const vehiculo_id = document.getElementById('filtroCombVehiculo').value;
+        const filtros = { busqueda, vehiculo_id: vehiculo_id || undefined };
+        const [datos, resumen] = await Promise.all([
+          window.api.combustible.listar(filtros),
+          window.api.combustible.resumen({ vehiculo_id: vehiculo_id || undefined })
+        ]);
+        const partesFiltro = [];
+        if (vehiculo_id) {
+          const veh = (await window.api.vehiculos.listar()).find(v => String(v.id) === String(vehiculo_id));
+          if (veh) partesFiltro.push(`<strong>Vehículo:</strong> ${esc(veh.placa || veh.codigo || '')}`);
+        }
+        if (busqueda) partesFiltro.push(`<strong>Búsqueda:</strong> ${esc(busqueda)}`);
+        await imprimirListadoModulo({
+          titulo: 'Control de Combustible',
+          subtitulo: `${datos.length} ${datos.length === 1 ? 'carga registrada' : 'cargas registradas'}`,
+          filtrosTexto: partesFiltro.join(' &nbsp;·&nbsp; '),
+          resumenCajas: [
+            { etiqueta: 'Cargas', valor: formatoEntero(resumen.totalCargas || datos.length) },
+            { etiqueta: 'Volumen', valor: `${(parseFloat(resumen.totalLitros) || 0).toFixed(2)} L` },
+            { etiqueta: 'Gasto total', valor: formatoMonto(resumen.totalGasto) },
+            { etiqueta: 'Rendimiento', valor: resumen.rendimientoKmL > 0 ? `${resumen.rendimientoKmL.toFixed(2)} km/L` : 'N/D' }
+          ],
+          columnas: [
+            { titulo: 'Fecha' }, { titulo: 'Vehículo' }, { titulo: 'Conductor' },
+            { titulo: 'Km', numero: true }, { titulo: 'Litros', numero: true },
+            { titulo: 'Precio', numero: true }, { titulo: 'Total', numero: true },
+            { titulo: 'Estación / Factura' }
+          ],
+          filas: datos.map(c => [
+            esc(formatearFecha(c.fecha)),
+            `<strong>${esc(c.placa)}</strong>`,
+            esc(c.conductor_nombre || '-'),
+            esc((Number(c.kilometraje) || 0).toLocaleString('es-NI')),
+            esc((Number(c.cantidad) || 0).toFixed(2)),
+            formatoMonto(c.precio_unitario),
+            `<strong>${formatoMonto(c.total)}</strong>`,
+            `${esc(c.estacion || '-')}${c.factura ? ` · ${esc(c.factura)}` : ''}`
+          ]),
+          nombreArchivo: `combustible-${fechaHoy()}`,
+          boton
+        });
+      } else {
+        const busqueda = document.getElementById('buscarVehiculo').value.trim();
+        const datos = await window.api.vehiculos.listar({ busqueda });
+        await imprimirListadoModulo({
+          titulo: 'Flota de Vehículos',
+          subtitulo: `${datos.length} ${datos.length === 1 ? 'unidad registrada' : 'unidades registradas'}`,
+          filtrosTexto: busqueda ? `<strong>Búsqueda:</strong> ${esc(busqueda)}` : '',
+          columnas: [
+            { titulo: 'Código' }, { titulo: 'Placa' }, { titulo: 'Marca / Modelo' },
+            { titulo: 'Año', numero: true }, { titulo: 'Estado' }
+          ],
+          filas: datos.map(v => [
+            `<strong>${esc(v.codigo)}</strong>`,
+            esc(v.placa),
+            `${esc(v.marca)} ${esc(v.modelo || '')}`,
+            esc(v.anio || 'N/D'),
+            v.activo ? 'Activo' : 'Inactivo'
+          ]),
+          nombreArchivo: `flota-${fechaHoy()}`,
+          boton
+        });
+      }
+    } catch (err) {
+      avisarError('No se pudo generar el reporte de Flota', err.message);
+    }
+  };
+
   document.getElementById('btnNuevoConductor').onclick = () => modalConductor();
+  document.getElementById('btnAgregarFilaConductor').onclick = async () => {
+    if (filaConductorActiva) { document.querySelector('#tablaConductores [data-campo="nombre"]')?.focus(); return; }
+    filaConductorActiva = true; await cargarConductores();
+    document.querySelector('#tablaConductores [data-campo="nombre"]')?.focus();
+  };
   document.getElementById('btnBuscarVehiculo').onclick = () => cargarVehiculos();
   document.getElementById('btnLimpiarVehiculo').onclick = () => {
     document.getElementById('buscarVehiculo').value = '';
@@ -1056,6 +1322,11 @@ async function renderFlota(){
     cargarConductores();
   };
   document.getElementById('btnNuevoCombustible').onclick = () => modalCombustible();
+  document.getElementById('btnAgregarFilaCombustible').onclick = async () => {
+    if (filaCombustibleActiva) { document.querySelector('#tablaCombustible [data-campo="fecha"]')?.focus(); return; }
+    filaCombustibleActiva = true; await cargarCombustible();
+    document.querySelector('#tablaCombustible [data-campo="fecha"]')?.focus();
+  };
   document.getElementById('btnBuscarCombustible').onclick = () => cargarCombustible();
   document.getElementById('btnLimpiarCombustible').onclick = () => {
     document.getElementById('buscarCombustible').value = '';
@@ -1077,6 +1348,7 @@ async function renderClientes(){
         <p>Registro de empresas, consignatarios, personas de contacto y direcciones de entrega.</p>
       </div>
       <div class="page-actions">
+        <button id="btnAgregarFilaCliente" class="btn" type="button">+ Agregar en tabla</button>
         <button id="btnNuevoCliente" class="btn primary">+ Registrar Cliente</button>
       </div>
     </div>
@@ -1099,14 +1371,11 @@ async function renderClientes(){
     <div id="modalClienteContainer"></div>
   `;
 
+  let filaClienteActiva = false;
   async function cargarClientes(){
     const busqueda = document.getElementById('buscarCliente').value.trim();
     const datos = await window.api.clientes.listar({ busqueda });
     const cont = document.getElementById('tablaClientes');
-    if(!datos.length){
-      cont.innerHTML = '<div class="empty">No hay clientes registrados en la cartera.</div>';
-      return;
-    }
     cont.innerHTML = `
       <table>
         <thead>
@@ -1121,6 +1390,20 @@ async function renderClientes(){
           </tr>
         </thead>
         <tbody>
+          ${filaClienteActiva ? `
+            <tr class="bitacora-inline-row">
+              <td><input class="bitacora-inline-control bitacora-inline-wide" data-campo="nombre" aria-label="Nombre del cliente" type="text" required placeholder="Nombre / razón social"></td>
+              <td><input class="bitacora-inline-control" data-campo="identificacion" aria-label="Identificación" type="text" placeholder="RUC / identificación"></td>
+              <td><input class="bitacora-inline-control" data-campo="contacto" aria-label="Contacto" type="text" placeholder="Contacto"></td>
+              <td>
+                <input class="bitacora-inline-control" data-campo="telefono" aria-label="Teléfono" type="text" placeholder="Teléfono">
+                <input class="bitacora-inline-control" data-campo="email" aria-label="Correo electrónico" type="email" placeholder="Correo">
+              </td>
+              <td><input class="bitacora-inline-control bitacora-inline-wide" data-campo="direccion" aria-label="Dirección" type="text" placeholder="Dirección"></td>
+              <td><select class="bitacora-inline-control" data-campo="activo" aria-label="Estado"><option value="1">Activo</option><option value="0">Inactivo</option></select></td>
+              <td><div class="bitacora-inline-actions"><button class="btn btn-sm primary" data-accion="guardar" type="button">Guardar</button><button class="btn btn-sm" data-accion="cancelar" type="button">Cancelar</button></div></td>
+            </tr>` : ''}
+          ${!datos.length && !filaClienteActiva ? '<tr><td class="empty" colspan="7">No hay clientes registrados en la cartera.</td></tr>' : ''}
           ${datos.map(c => `
             <tr>
               <td><strong>${esc(c.nombre)}</strong></td>
@@ -1144,6 +1427,38 @@ async function renderClientes(){
         </tbody>
       </table>
     `;
+
+    const filaNueva = cont.querySelector('.bitacora-inline-row');
+    if (filaNueva) {
+      filaNueva.querySelector('[data-accion="cancelar"]').onclick = () => { filaClienteActiva = false; cargarClientes(); };
+      filaNueva.querySelector('[data-accion="guardar"]').onclick = async event => {
+        const boton = event.currentTarget;
+        const invalidos = [...filaNueva.querySelectorAll('input, select')].find(input => !input.checkValidity());
+        if (invalidos) { invalidos.reportValidity(); return; }
+        const valor = campo => filaNueva.querySelector(`[data-campo="${campo}"]`).value.trim();
+        boton.disabled = true;
+        boton.textContent = 'Guardando...';
+        try {
+          await window.api.clientes.guardar({
+            id: null,
+            nombre: valor('nombre'),
+            identificacion: valor('identificacion'),
+            contacto: valor('contacto'),
+            telefono: valor('telefono'),
+            email: valor('email'),
+            direccion: valor('direccion'),
+            activo: parseInt(valor('activo'), 10)
+          });
+          filaClienteActiva = false;
+          await cargarClientes();
+        } catch (err) {
+          console.error('No se pudo guardar el cliente desde la tabla:', err);
+          avisarError('No se pudo guardar el cliente', err.message);
+          boton.disabled = false;
+          boton.textContent = 'Guardar';
+        }
+      };
+    }
 
     cont.querySelectorAll('.btnEditarCli').forEach(b => {
       b.onclick = () => {
@@ -1243,6 +1558,11 @@ async function renderClientes(){
   }
 
   document.getElementById('btnNuevoCliente').onclick = () => modalCliente();
+  document.getElementById('btnAgregarFilaCliente').onclick = async () => {
+    if (filaClienteActiva) { document.querySelector('#tablaClientes [data-campo="nombre"]')?.focus(); return; }
+    filaClienteActiva = true; await cargarClientes();
+    document.querySelector('#tablaClientes [data-campo="nombre"]')?.focus();
+  };
   document.getElementById('btnBuscarCli').onclick = () => cargarClientes();
   document.getElementById('btnLimpiarCli').onclick = () => {
     document.getElementById('buscarCliente').value = '';

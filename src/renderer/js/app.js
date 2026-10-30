@@ -1,5 +1,10 @@
 const content=document.getElementById('content'),pageTitle=document.getElementById('page-title');
 const money=new Intl.NumberFormat('es-NI',{minimumFractionDigits:2,maximumFractionDigits:2});
+const CLAVE_PERIODO_DASHBOARD='control-empresa-dashboard-periodo';
+const PERIODOS_DASHBOARD=['mes-actual','mes-anterior','ultimos-3-meses','ultimos-6-meses','anio-actual','historico'];
+let periodoDashboard=PERIODOS_DASHBOARD.includes(localStorage.getItem(CLAVE_PERIODO_DASHBOARD))
+  ? localStorage.getItem(CLAVE_PERIODO_DASHBOARD)
+  : 'mes-actual';
 
 // Estado visual global: la interfaz usa un único contenedor con scroll.
 // Los controles del formulario no se deshabilitan por navegación ni por refresco de módulos.
@@ -286,11 +291,12 @@ function graficaArea(serie) {
 function pintarTablero(d) {
   const f = d.financiero;
   const op = d.operativo;
+  const tieneComparativa = !!d.rango.previo;
 
   // Utilidad del período. La variación se compara contra el período anterior
   // de igual duración, que es el que trae el backend en "anterior".
   const utilidad = f.utilidad;
-  const utilidadPrev = f.anterior.ingresos - f.anterior.egresos;
+  const utilidadPrev = tieneComparativa ? f.anterior.ingresos - f.anterior.egresos : 0;
   const kUtilidad = document.getElementById('kUtilidad');
   kUtilidad.textContent = formatoMonto(utilidad);
   kUtilidad.className = 'kpi-principal-valor ' + (utilidad >= 0 ? 'positivo' : 'negativo');
@@ -300,20 +306,40 @@ function pintarTablero(d) {
 
   const vUtilidad = variacion(utilidad, utilidadPrev);
   const cajaComp = document.getElementById('kComparativa');
-  cajaComp.className = 'dash-hero-variacion ' + (vUtilidad.clase === 'sube' ? 'sube' : vUtilidad.clase === 'baja' ? 'baja' : 'estable');
-  cajaComp.innerHTML = `<span class="var-flecha">${vUtilidad.clase === 'sube' ? '▲' : vUtilidad.clase === 'baja' ? '▼' : '■'}</span> ${esc(vUtilidad.texto)} frente al período anterior`;
+  cajaComp.className = 'dash-hero-variacion ' + (tieneComparativa ? (vUtilidad.clase === 'sube' ? 'sube' : vUtilidad.clase === 'baja' ? 'baja' : 'estable') : 'estable');
+  cajaComp.innerHTML = tieneComparativa
+    ? `<span class="var-flecha">${vUtilidad.clase === 'sube' ? '▲' : vUtilidad.clase === 'baja' ? '▼' : '■'}</span> ${esc(vUtilidad.texto)} frente al período anterior`
+    : 'Sin comparación para todo el histórico';
 
   const pintarKpi = (idValor, idPie, valor, anterior, claseValor) => {
     document.getElementById(idValor).textContent = formatoMonto(valor);
     if (claseValor) document.getElementById(idValor).className = 'dash-kpi-valor ' + claseValor;
-    const v = variacion(valor, anterior);
     const pie = document.getElementById(idPie);
+    if (!tieneComparativa) {
+      pie.className = 'dash-kpi-pie estable';
+      pie.textContent = 'Sin comparación';
+      return;
+    }
+    const v = variacion(valor, anterior);
     pie.className = 'dash-kpi-pie ' + v.clase;
     pie.innerHTML = `<span class="var-flecha">${v.clase === 'sube' ? '▲' : v.clase === 'baja' ? '▼' : '■'}</span> ${esc(v.texto)} frente al período anterior`;
   };
   pintarKpi('kIngresos', 'kIngresosVar', f.ingresos, f.anterior.ingresos, 'positivo');
   pintarKpi('kEgresos', 'kEgresosVar', f.egresos, f.anterior.egresos, 'negativo');
   document.getElementById('kCostos').textContent = formatoMonto(f.costosOperativos);
+
+  // Ticket promedio por viaje y resultado neto del último mes de la serie:
+  // dos cifras que ayudan a decidir sin abrir los reportes.
+  const ticket = op.viajes > 0 ? f.ingresos / op.viajes : 0;
+  const ticketEl = document.getElementById('kTicket');
+  if (ticketEl) ticketEl.textContent = formatoMonto(ticket);
+  const ultimo = (d.serie || []).length ? d.serie[d.serie.length - 1] : null;
+  const netoEl = document.getElementById('kNetoMes');
+  if (netoEl && ultimo) {
+    const neto = ultimo.ingresos - ultimo.egresos;
+    netoEl.textContent = `${formatoMonto(neto)} · ${etiquetaMes(ultimo.mes)}`;
+    netoEl.className = 'dash-kpi-valor ' + (neto >= 0 ? 'positivo' : 'negativo');
+  }
 
   // Gráfico de área con líneas SVG. Todas las series usan la MISMA escala (el
   // valor más alto llega al tope) para que la comparación no mienta.
@@ -368,6 +394,33 @@ function pintarTablero(d) {
   if (botonAviso) botonAviso.onclick = () => abrir('planilla');
 }
 
+function fechaISOlocal(fecha) {
+  return `${fecha.getFullYear()}-${String(fecha.getMonth() + 1).padStart(2, '0')}-${String(fecha.getDate()).padStart(2, '0')}`;
+}
+
+function rangoPeriodoDashboard(periodo) {
+  const hoy = new Date();
+  const inicioMes = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
+  const finMes = new Date(hoy.getFullYear(), hoy.getMonth() + 1, 0);
+  let inicio = inicioMes;
+  let fin = finMes;
+
+  if (periodo === 'mes-anterior') {
+    inicio = new Date(hoy.getFullYear(), hoy.getMonth() - 1, 1);
+    fin = new Date(hoy.getFullYear(), hoy.getMonth(), 0);
+  } else if (periodo === 'ultimos-3-meses') {
+    inicio = new Date(hoy.getFullYear(), hoy.getMonth() - 2, 1);
+  } else if (periodo === 'ultimos-6-meses') {
+    inicio = new Date(hoy.getFullYear(), hoy.getMonth() - 5, 1);
+  } else if (periodo === 'anio-actual') {
+    inicio = new Date(hoy.getFullYear(), 0, 1);
+  } else if (periodo === 'historico') {
+    inicio = null;
+  }
+
+  return { desde: inicio ? fechaISOlocal(inicio) : null, hasta: fechaISOlocal(fin) };
+}
+
 async function renderDashboard(){
   content.innerHTML=`
     <div class="dash-hero">
@@ -383,8 +436,26 @@ async function renderDashboard(){
         <div id="kComparativa" class="dash-hero-variacion">-</div>
       </div>
     </div>
+    <div class="dash-cargando" id="dashCargando" hidden>
+      <span class="dash-cargando-punto"></span>
+      <span class="dash-cargando-punto"></span>
+      <span class="dash-cargando-punto"></span>
+      <span>Actualizando el tablero…</span>
+    </div>
     <div class="dash-panel dash-panel--acciones">
       <div id="avisoPendientes"></div>
+      <div class="dash-dashboard-controles">
+        <div class="dash-periodo">
+          <label for="dashboardPeriodo">Período del resumen</label>
+          <select id="dashboardPeriodo">
+            <option value="mes-actual">Mes actual</option>
+            <option value="mes-anterior">Mes anterior</option>
+            <option value="ultimos-3-meses">Últimos 3 meses</option>
+            <option value="ultimos-6-meses">Últimos 6 meses</option>
+            <option value="anio-actual">Año actual</option>
+            <option value="historico">Todo el histórico</option>
+          </select>
+        </div>
       <div class="action-buttons">
         <button class="btn primary" data-ir="ingresos">Registrar ingreso</button>
         <button class="btn" data-ir="egresos">Registrar gasto</button>
@@ -394,6 +465,7 @@ async function renderDashboard(){
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 00-2 2v3"/><path d="M16 3h3a2 2 0 012 2v3"/><path d="M8 21H5a2 2 0 01-2-2v-3"/><path d="M16 21h3a2 2 0 002-2v-3"/></svg>
           <span class="pc-texto">Pantalla completa</span>
         </button>
+      </div>
       </div>
     </div>
     <div class="dash-kpis">
@@ -473,6 +545,32 @@ async function renderDashboard(){
       abrir(b.dataset.ir);
     };
   });
+  const periodoSelect = document.getElementById('dashboardPeriodo');
+  periodoSelect.value = periodoDashboard;
+  const pintarTableroConCarga = async () => {
+    const avisoCarga = document.getElementById('dashCargando');
+    if (avisoCarga) avisoCarga.hidden = false;
+    try {
+      const datos = await window.api.dashboard.tablero(rangoPeriodoDashboard(periodoDashboard));
+      pintarTablero(datos);
+    } finally {
+      if (avisoCarga) avisoCarga.hidden = true;
+    }
+  };
+  const cargarTablero = async () => {
+    const datos = await window.api.dashboard.tablero(rangoPeriodoDashboard(periodoDashboard));
+    pintarTablero(datos);
+  };
+  periodoSelect.addEventListener('change', async () => {
+    periodoDashboard = periodoSelect.value;
+    localStorage.setItem(CLAVE_PERIODO_DASHBOARD, periodoDashboard);
+    try {
+      await pintarTableroConCarga();
+    } catch (e) {
+      console.error(e);
+      document.getElementById('grafica').innerHTML='<div class="empty">No se pudo cargar el resumen: '+esc(e.message)+'</div>';
+    }
+  });
   const btnPantalla=document.getElementById('btnPantallaCompleta');
   if(btnPantalla){
     const etiqueta=btnPantalla.querySelector('.pc-texto');
@@ -489,9 +587,11 @@ async function renderDashboard(){
     sincronizar();
   }
   try{
-    pintarTablero(await window.api.dashboard.tablero({}));
+    await pintarTableroConCarga();
   }catch(e){
     console.error(e);
+    const avisoCarga = document.getElementById('dashCargando');
+    if (avisoCarga) avisoCarga.hidden = true;
     document.getElementById('grafica').innerHTML='<div class="empty">No se pudo cargar el resumen: '+esc(e.message)+'</div>';
   }
 }
@@ -513,6 +613,8 @@ async function renderBitacora(){
         <p>Control de recorridos, kilometrajes, unidades de transporte y conductores.</p>
       </div>
       <div class="page-actions">
+        <button id="btnImprimirBitacora" class="btn btn-warning" type="button">🖨️ Imprimir Viajes</button>
+        <button id="btnAgregarFilaViaje" class="btn" type="button">+ Agregar en tabla</button>
         <button id="btnNuevoViaje" class="btn primary" type="button">+ Registrar Viaje</button>
       </div>
     </div>
@@ -575,6 +677,7 @@ async function renderBitacora(){
   let vehiculos = [];
   let conductores = [];
   let clientes = [];
+  let filaNuevaActiva = false;
 
   const mostrarError = (texto) => {
     if (!mensaje) return;
@@ -646,6 +749,66 @@ async function renderBitacora(){
     };
   }
 
+  function renderizarFilaNueva(){
+    return `
+      <tr class="bitacora-inline-row">
+        <td><span class="badge badge-neutral">Nuevo</span></td>
+        <td><input class="bitacora-inline-control" data-campo="fecha" aria-label="Fecha" type="date" required value="${fechaHoy()}"></td>
+        <td>
+          <select class="bitacora-inline-control" data-campo="vehiculo" aria-label="Unidad">
+            <option value="">Sin unidad</option>
+            ${vehiculos.map(v => `<option value="${esc(v.id)}">${esc(v.codigo || '')} - ${esc(v.placa || '')}</option>`).join('')}
+          </select>
+        </td>
+        <td>
+          <select class="bitacora-inline-control" data-campo="conductor" aria-label="Conductor">
+            <option value="">Sin conductor</option>
+            ${conductores.map(c => `<option value="${esc(c.id)}">${esc(c.nombre || '')}</option>`).join('')}
+          </select>
+        </td>
+        <td>
+          <select class="bitacora-inline-control" data-campo="cliente" aria-label="Cliente">
+            <option value="">Sin cliente</option>
+            ${clientes.map(c => `<option value="${esc(c.id)}" data-nombre="${esc(c.nombre || '')}">${esc(c.nombre || '')}</option>`).join('')}
+            <option value="OTRO">Otro / manual</option>
+          </select>
+          <input class="bitacora-inline-control bitacora-inline-manual" data-campo="clienteManual" aria-label="Nombre del cliente" type="text" placeholder="Nombre del cliente" hidden>
+        </td>
+        <td><input class="bitacora-inline-control" data-campo="modulo" aria-label="Módulo" type="text" placeholder="Módulo"></td>
+        <td><input class="bitacora-inline-control" data-campo="horaSalida" aria-label="Hora de salida" type="time" value="${new Date().toTimeString().slice(0,5)}"></td>
+        <td><input class="bitacora-inline-control bitacora-inline-wide" data-campo="lugarSalida" aria-label="Lugar de salida" type="text" placeholder="Lugar de salida" required value="Managua"></td>
+        <td><input class="bitacora-inline-control" data-campo="horaLlegada" aria-label="Hora de llegada" type="time"></td>
+        <td><input class="bitacora-inline-control bitacora-inline-wide" data-campo="destino" aria-label="Destino" type="text" placeholder="Destino" required></td>
+        <td><input class="bitacora-inline-control" data-campo="horaSalidaDestino" aria-label="Hora de salida del destino" type="time"></td>
+        <td><input class="bitacora-inline-control" data-campo="horaRetorno" aria-label="Hora de retorno" type="time"></td>
+        <td>
+          <input class="bitacora-inline-control" data-campo="kmSalida" aria-label="Kilómetros de salida" type="number" min="0" step="0.1" placeholder="Salida" value="0">
+          <input class="bitacora-inline-control" data-campo="kmLlegada" aria-label="Kilómetros de llegada" type="number" min="0" step="0.1" placeholder="Llegada" value="0">
+        </td>
+        <td><input class="bitacora-inline-control" data-campo="viatico" aria-label="Viático" type="number" min="0" step="0.01" value="0"></td>
+        <td><input class="bitacora-inline-control" data-campo="estadia" aria-label="Estadía" type="number" min="0" step="0.01" value="0"></td>
+        <td><input class="bitacora-inline-control" data-campo="esteli" aria-label="Extra" type="number" min="0" step="0.01" value="0"></td>
+        <td>
+          <select class="bitacora-inline-control" data-campo="estado" aria-label="Estado">
+            <option value="EN CURSO">En curso</option>
+            <option value="COMPLETADO">Completado</option>
+            <option value="CANCELADO">Cancelado</option>
+          </select>
+        </td>
+        <td>
+          <input class="bitacora-inline-control bitacora-inline-wide" data-campo="carga" aria-label="Descripción de carga" type="text" placeholder="Carga (opcional)">
+          <input class="bitacora-inline-control bitacora-inline-wide" data-campo="observaciones" aria-label="Nota u observaciones" type="text" placeholder="Nota (opcional)">
+        </td>
+        <td>
+          <div class="bitacora-inline-actions">
+            <button class="btn btn-sm primary" data-accion="guardar-fila" type="button">Guardar</button>
+            <button class="btn btn-sm" data-accion="cancelar-fila" type="button">Cancelar</button>
+          </div>
+        </td>
+      </tr>
+    `;
+  }
+
   async function cargarLista(){
     ocultarError();
     const tabla = document.getElementById('contenedorTablaBitacora');
@@ -660,11 +823,6 @@ async function renderBitacora(){
 
     try {
       const viajes = await window.api.bitacora.listar(filtros);
-
-      if(!viajes.length){
-        tabla.innerHTML = '<div class="empty">No hay registros de viajes con los filtros seleccionados.</div>';
-        return;
-      }
 
       tabla.innerHTML = `
         <table style="min-width:1300px; font-size:12px;">
@@ -686,11 +844,14 @@ async function renderBitacora(){
               <th style="text-align:right">VIATICO</th>
               <th style="text-align:right">ESTADIA</th>
               <th style="text-align:right">EXTRA</th>
-              <th>ESTADO / NOTA</th>
+              <th>ESTADO</th>
+              <th>NOTA</th>
               <th style="text-align:right">ACCIONES</th>
             </tr>
           </thead>
           <tbody>
+            ${filaNuevaActiva ? renderizarFilaNueva() : ''}
+            ${!viajes.length && !filaNuevaActiva ? '<tr><td class="empty" colspan="19">No hay registros de viajes con los filtros seleccionados.</td></tr>' : ''}
             ${viajes.map(v => {
               let badgeClass = 'badge-warning';
               if (v.estado === 'COMPLETADO') badgeClass = 'badge-success';
@@ -708,7 +869,7 @@ async function renderBitacora(){
               return `
                 <tr>
                   <td><strong>#${esc(v.id)}</strong></td>
-                  <td><strong>${esc(v.fecha || '')}</strong></td>
+                  <td><strong>${esc(formatearFecha(v.fecha))}</strong></td>
                   <td><strong>${esc(unidadTxt)}</strong>${v.vehiculo_marca ? `<br><small style="color:var(--muted)">${esc(v.vehiculo_marca)}</small>` : ''}</td>
                   <td>${condTxt}</td>
                   <td><strong>${cliTxt}</strong></td>
@@ -726,10 +887,8 @@ async function renderBitacora(){
                   <td style="text-align:right">${formatoMonto(v.viatico || 0)}</td>
                   <td style="text-align:right">${formatoMonto(v.estadia || 0)}</td>
                   <td style="text-align:right">${formatoMonto(v.esteli || 0)}</td>
-                  <td>
-                    <span class="badge ${badgeClass}">${esc(v.estado || '')}</span>
-                    ${notaTxt ? `<br><small style="color:var(--muted); max-width:140px; display:inline-block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${notaEsc}">${notaEsc}</small>` : ''}
-                  </td>
+                  <td><span class="badge ${badgeClass}">${esc(v.estado || '')}</span></td>
+                  <td>${notaTxt ? `<small style="color:var(--muted); max-width:160px; display:inline-block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${notaEsc}">${notaEsc}</small>` : '<span style="color:var(--muted)">-</span>'}</td>
                   <td style="text-align:right">
                     <div class="action-buttons" style="justify-content:flex-end; gap:4px;">
                       <button class="btn btn-sm btn-secondary btnDocsViaje" data-id="${esc(v.id)}" type="button">Documentos (${[1, 2, 3].filter(n => v[`documento_viaje_${n}`]).length}/3)</button>
@@ -744,6 +903,80 @@ async function renderBitacora(){
           </tbody>
         </table>
       `;
+
+      const filaNueva = tabla.querySelector('.bitacora-inline-row');
+      if (filaNueva) {
+        const clienteSelect = filaNueva.querySelector('[data-campo="cliente"]');
+        const clienteManual = filaNueva.querySelector('[data-campo="clienteManual"]');
+        clienteSelect.onchange = () => {
+          clienteManual.hidden = clienteSelect.value !== 'OTRO';
+          if (!clienteManual.hidden) clienteManual.focus();
+        };
+        filaNueva.querySelector('[data-accion="cancelar-fila"]').onclick = () => {
+          filaNuevaActiva = false;
+          cargarLista();
+        };
+        filaNueva.querySelector('[data-accion="guardar-fila"]').onclick = async event => {
+          const boton = event.currentTarget;
+          const controles = [...filaNueva.querySelectorAll('input, select')];
+          const invalidos = controles.find(control => !control.hidden && !control.checkValidity());
+          if (invalidos) {
+            invalidos.reportValidity();
+            return;
+          }
+
+          const valor = campo => filaNueva.querySelector(`[data-campo="${campo}"]`).value.trim();
+          const kmSalida = Number(valor('kmSalida')) || 0;
+          const kmLlegada = Number(valor('kmLlegada')) || 0;
+          if (kmLlegada > 0 && kmLlegada < kmSalida) {
+            avisarAdvertencia('Kilometraje incorrecto', 'El Km de llegada no puede ser menor al Km de salida.');
+            return;
+          }
+
+          const clienteSelectActual = filaNueva.querySelector('[data-campo="cliente"]');
+          const cliente = clienteSelectActual.value === 'OTRO'
+            ? valor('clienteManual')
+            : (clienteSelectActual.options[clienteSelectActual.selectedIndex]?.dataset?.nombre || null);
+          const payload = {
+            id: null,
+            fecha: valor('fecha'),
+            vehiculo_id: valor('vehiculo') ? Number(valor('vehiculo')) : null,
+            conductor_id: valor('conductor') ? Number(valor('conductor')) : null,
+            cliente_id: clienteSelectActual.value && clienteSelectActual.value !== 'OTRO' ? Number(clienteSelectActual.value) : null,
+            cliente: cliente || null,
+            modulo: valor('modulo') || null,
+            hora_salida: valor('horaSalida') || null,
+            lugar_salida: valor('lugarSalida'),
+            origen: valor('lugarSalida'),
+            hora_llegada: valor('horaLlegada') || null,
+            destino: valor('destino'),
+            hora_salida_destino: valor('horaSalidaDestino') || null,
+            hora_retorno: valor('horaRetorno') || null,
+            km_salida: kmSalida,
+            km_llegada: kmLlegada,
+            viatico: Math.max(0, Number(valor('viatico')) || 0),
+            estadia: Math.max(0, Number(valor('estadia')) || 0),
+            esteli: Math.max(0, Number(valor('esteli')) || 0),
+            carga_descripcion: valor('carga') || null,
+            estado: valor('estado'),
+            observaciones: valor('observaciones') || null
+          };
+
+          boton.disabled = true;
+          boton.textContent = 'Guardando...';
+          try {
+            const resultado = await window.api.bitacora.guardar(payload);
+            if (!resultado || resultado.ok === false) throw new Error('La base de datos no confirmó el registro.');
+            filaNuevaActiva = false;
+            await Promise.all([cargarLista(), actualizarKPIs()]);
+          } catch (err) {
+            console.error('Error al guardar viaje desde la tabla:', err);
+            avisarError('No se pudo guardar el viaje', err.message || 'No fue posible guardar el viaje.');
+            boton.disabled = false;
+            boton.textContent = 'Guardar';
+          }
+        };
+      }
 
       document.querySelectorAll('.btnDocsViaje').forEach(btn => {
         btn.onclick = () => {
@@ -809,7 +1042,7 @@ async function renderBitacora(){
             <button class="modal-close" id="btnCerrarDocsViaje" type="button">&times;</button>
           </div>
           <p style="margin:0 0 14px;color:var(--muted);font-size:13px;">
-            ${esc(item.fecha || '')} · ${esc(item.lugar_salida || item.origen || 'Origen')} → ${esc(item.destino || '')}
+            ${esc(formatearFecha(item.fecha))} · ${esc(item.lugar_salida || item.origen || 'Origen')} → ${esc(item.destino || '')}
           </p>
           <div class="form-row" style="grid-template-columns:repeat(3,minmax(0,1fr));">
             ${documentos.map((documento, indice) => {
@@ -1349,9 +1582,80 @@ async function renderBitacora(){
 
   // Estos eventos se enlazan antes de cargar catálogos para que el módulo
   // siga siendo utilizable aunque falle una consulta secundaria.
+  document.getElementById('btnAgregarFilaViaje').onclick = async () => {
+    if (filaNuevaActiva) {
+      document.querySelector('.bitacora-inline-row [data-campo="fecha"]')?.focus();
+      return;
+    }
+    filaNuevaActiva = true;
+    await cargarLista();
+    document.querySelector('.bitacora-inline-row [data-campo="fecha"]')?.focus();
+  };
   document.getElementById('btnNuevoViaje').onclick = () => abrirModalForm();
 
   document.getElementById('btnFiltrar').onclick = () => cargarLista();
+
+  // Reporte PDF de la Bitácora: vuelve a consultar los viajes con los filtros
+  // vigentes (no copia la tabla de pantalla) y arma un documento apaisado con
+  // la ruta, horas, kilometraje y estado de cada viaje.
+  document.getElementById('btnImprimirBitacora').onclick = async (e) => {
+    const boton = e.currentTarget;
+    try {
+      const filtros = obtenerFiltros();
+      const viajes = await window.api.bitacora.listar(filtros);
+      const partesFiltro = [];
+      if (filtros.desde || filtros.hasta) partesFiltro.push(`<strong>Período:</strong> ${filtros.desde || '—'} al ${filtros.hasta || '—'}`);
+      if (filtros.estado) partesFiltro.push(`<strong>Estado:</strong> ${esc(filtros.estado)}`);
+      const veh = vehiculos.find(x => String(x.id) === String(filtros.vehiculo_id));
+      if (veh) partesFiltro.push(`<strong>Vehículo:</strong> ${esc(veh.placa || veh.codigo || '')}`);
+      const cond = conductores.find(x => String(x.id) === String(filtros.conductor_id));
+      if (cond) partesFiltro.push(`<strong>Conductor:</strong> ${esc(cond.nombre)}`);
+      if (filtros.busqueda) partesFiltro.push(`<strong>Búsqueda:</strong> ${esc(filtros.busqueda)}`);
+      const kmTotal = viajes.reduce((s, v) => {
+        const km = Number(v.km_recorridos) || (Number(v.km_llegada) > Number(v.km_salida) ? Number(v.km_llegada) - Number(v.km_salida) : 0);
+        return s + km;
+      }, 0);
+      await imprimirListadoModulo({
+        titulo: 'Bitácora de Viajes',
+        subtitulo: `${viajes.length} ${viajes.length === 1 ? 'viaje' : 'viajes'} · ${new Intl.NumberFormat('es-NI').format(kmTotal)} km recorridos`,
+        filtrosTexto: partesFiltro.join(' &nbsp;·&nbsp; '),
+        resumenCajas: [
+          { etiqueta: 'Viajes', valor: formatoEntero(viajes.length) },
+          { etiqueta: 'Kilómetros', valor: `${new Intl.NumberFormat('es-NI').format(kmTotal)} km` },
+          { etiqueta: 'En curso', valor: formatoEntero(viajes.filter(v => v.estado === 'EN CURSO').length) },
+          { etiqueta: 'Completados', valor: formatoEntero(viajes.filter(v => v.estado === 'COMPLETADO').length) }
+        ],
+        columnas: [
+          { titulo: '#' }, { titulo: 'Fecha' }, { titulo: 'Unidad' }, { titulo: 'Conductor' },
+          { titulo: 'Cliente' }, { titulo: 'Origen' }, { titulo: 'Destino' },
+          { titulo: 'H. salida' }, { titulo: 'H. llegada' }, { titulo: 'H. retorno' },
+          { titulo: 'Km salida/llegada' }, { titulo: 'Estado' }
+        ],
+        filas: viajes.map(v => {
+          const km = Number(v.km_recorridos) || (Number(v.km_llegada) > Number(v.km_salida) ? Number(v.km_llegada) - Number(v.km_salida) : 0);
+          return [
+            `#${esc(v.id)}`,
+            esc(formatearFecha(v.fecha)),
+            esc(v.vehiculo_placa || 'Sin unidad'),
+            esc(v.conductor_nombre || '-'),
+            esc(v.cliente_nombre_rel || v.cliente || '-'),
+            esc(v.lugar_salida || v.origen || '-'),
+            esc(v.destino || '-'),
+            esc(v.hora_salida || '-'),
+            esc(v.hora_llegada || '-'),
+            esc(v.hora_retorno || '-'),
+            `${Number(v.km_salida || 0).toLocaleString('es-NI')} → ${Number(v.km_llegada || 0) > 0 ? Number(v.km_llegada).toLocaleString('es-NI') : 'Pend.'}${km > 0 ? ` (${km.toLocaleString('es-NI')} km)` : ''}`,
+            esc(v.estado || '-')
+          ];
+        }),
+        nombreArchivo: `bitacora-${fechaHoy()}`,
+        orientacion: 'landscape',
+        boton
+      });
+    } catch (err) {
+      avisarError('No se pudo generar el reporte de Bitácora', err.message);
+    }
+  };
 
   document.getElementById('btnLimpiarFiltros').onclick = () => {
     Object.entries(estadoInicial).forEach(([key, value]) => {
@@ -1471,7 +1775,7 @@ async function renderReportes(){
         <table>
           <thead><tr><th>Fecha</th><th>Vehículo</th><th>Conductor</th><th>Odómetro</th><th style="text-align:right">Cantidad</th><th style="text-align:right">Precio</th><th style="text-align:right">Total</th></tr></thead>
           <tbody>
-            ${datos.map(x=>`<tr><td>${x.fecha}</td><td>${x.placa||''} ${x.modelo||''}</td><td>${x.conductor||'N/D'}</td><td>${x.kilometraje||0}</td><td style="text-align:right">${(x.cantidad||0).toFixed(2)}</td><td style="text-align:right">${formatoMonto(x.precio_unitario)}</td><td style="text-align:right"><strong>${formatoMonto(x.total)}</strong></td></tr>`).join('')}
+            ${datos.map(x=>`<tr><td>${esc(formatearFecha(x.fecha))}</td><td>${esc(x.placa||'')} ${esc(x.modelo||'')}</td><td>${esc(x.conductor||'N/D')}</td><td>${x.kilometraje||0}</td><td style="text-align:right">${(x.cantidad||0).toFixed(2)}</td><td style="text-align:right">${formatoMonto(x.precio_unitario)}</td><td style="text-align:right"><strong>${formatoMonto(x.total)}</strong></td></tr>`).join('')}
           </tbody>
         </table>`:'<div class="empty">No hay cargas de combustible en el período.</div>';
       return;
@@ -1485,7 +1789,7 @@ async function renderReportes(){
       <table>
         <thead><tr><th>Fecha</th><th>Concepto</th><th>Categoría</th><th>${tipo==='ingresos'?'Cliente':'Beneficiario'}</th><th>Método</th><th style="text-align:right">Monto</th></tr></thead>
         <tbody>
-          ${datos.map(x=>`<tr><td>${x.fecha}</td><td>${x.concepto}</td><td>${x.categoria||''}</td><td>${tipo==='ingresos'?(x.cliente_nombre||''):(x.beneficiario||'')}</td><td>${x.metodo||''}</td><td style="text-align:right"><strong>${formatoMonto(x.monto)}</strong></td></tr>`).join('')}
+          ${datos.map(x=>`<tr><td>${esc(formatearFecha(x.fecha))}</td><td>${esc(x.concepto)}</td><td>${esc(x.categoria||'')}</td><td>${esc(tipo==='ingresos'?(x.cliente_nombre||''):(x.beneficiario||''))}</td><td>${esc(x.metodo||'')}</td><td style="text-align:right"><strong>${formatoMonto(x.monto)}</strong></td></tr>`).join('')}
         </tbody>
       </table>`:'<div class="empty">No hay registros para el período seleccionado.</div>';
   };
