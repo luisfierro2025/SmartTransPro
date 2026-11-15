@@ -26,21 +26,21 @@ const Modulos = (() => {
   const claseAccion = (a) => (/RECHAZ|FALLID/.test(a) ? "cancelada" : /LIBERAR|DESACTIV|SUSPEND/.test(a) ? "suspendida" : /LOGOUT/.test(a) ? "neutra" : "activa");
 
   /* ------------------------------ montaje ------------------------------ */
-  const seg = (v, ops) => `<div class="seg" data-seg="${v}" role="group">${ops.map(([k, l], i) => `<button class="seg__btn${i ? "" : " is-active"}" data-v="${k}" type="button">${l}</button>`).join("")}</div>`;
+  const seg = (v, label, ops) => `<div class="filter-field"><span class="filter-field__label">${label}</span><div class="seg" data-seg="${v}" role="group" aria-label="Filtrar por ${label.toLowerCase()}">${ops.map(([k, l], i) => `<button class="seg__btn${i ? "" : " is-active"}" data-v="${k}" type="button">${l}</button>`).join("")}</div></div>`;
   const lupa = '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6"/><path d="M20 20l-3.6-3.6"/></svg>';
 
   function montar() {
     if (montado) return;
     const defs = [
       ["clientes", "Clientes registrados", "Datos de contacto y licencias emitidas por cliente.", "", ["Cliente", "Identificacion", "Contacto", "Licencias", "Estado", "Acciones"]],
-      ["activaciones", "Equipos activados", "Cada equipo que ha validado una licencia, con su ultima conexion.", seg("activaciones", [["TODOS", "Todos"], ["ACTIVA", "Activos"], ["LIBERADA", "Liberados"]]), ["Equipo", "Licencia", "Cliente", "Version", "Ultima validacion", "Estado", "Acciones"]],
+      ["activaciones", "Equipos activados", "Cada equipo que ha validado una licencia, con su ultima conexion.", seg("activaciones", "Estado", [["TODOS", "Todos"], ["ACTIVA", "Activos"], ["LIBERADA", "Liberados"]]), ["Equipo", "Licencia", "Cliente", "Version", "Ultima validacion", "Estado", "Acciones"]],
       ["productos", "Catalogo de productos", "Software que puede licenciarse. Desactivar un producto bloquea nuevas activaciones.", "", ["Producto", "Descripcion", "Licencias", "Estado", "Acciones"]],
-      ["auditoria", "Registro de auditoria", "Ultimas 300 acciones: administracion, sesiones y activaciones de equipos.", seg("auditoria", [["TODOS", "Todo"], ["licencia", "Licencias"], ["cliente", "Clientes"], ["producto", "Productos"], ["activacion", "Equipos"], ["sesion", "Sesiones"]]), ["Fecha", "Accion", "Entidad", "Detalle", "IP"]]
+      ["auditoria", "Registro de auditoria", "Ultimas 300 acciones: administracion, sesiones y activaciones de equipos.", seg("auditoria", "Entidad", [["TODOS", "Todo"], ["licencia", "Licencias"], ["cliente", "Clientes"], ["producto", "Productos"], ["activacion", "Equipos"], ["sesion", "Sesiones"]]), ["Fecha", "Accion", "Entidad", "Detalle", "IP"]]
     ];
     $("content").insertAdjacentHTML("beforeend", defs.map(([v, t, d, s, cols]) =>
       `<section class="panel view view--tabla" id="v-${v}" hidden>
         <div class="panel__head"><div><h2>${t}</h2><p class="panel__desc">${d}</p></div>
-          <div class="panel__tools"><div class="search">${lupa}<input data-buscar="${v}" type="search" placeholder="Buscar..." aria-label="Buscar"></div>${s}</div></div>
+          <div class="panel__tools"><div class="filter-field filter-field--search"><label class="filter-field__label" for="buscar-${v}">Buscar ${v}</label><div class="search">${lupa}<input id="buscar-${v}" data-buscar="${v}" type="search" placeholder="Buscar en ${v}..."></div></div>${s}</div></div>
         <div class="table-wrap"><table class="table"><thead><tr>${cols.map((c) => `<th${c === "Acciones" ? ' class="th-actions"' : ""}>${c}</th>`).join("")}</tr></thead><tbody id="tb-${v}"></tbody></table></div>
         <div class="panel__foot"><span id="rs-${v}">&mdash;</span></div>
       </section>`).join(""));

@@ -16,9 +16,9 @@ const CLAVE_TOKEN = 'control-empresa-sesion';
 // Módulos que cada rol puede abrir. Se replican aquí (y en main/seguridad.js)
 // para que la interfaz oculte lo que no corresponde, sin esperar al servidor.
 const MODULOS_POR_ROL = {
-  ADMIN: ['dashboard', 'bitacora', 'flota', 'clientes', 'planilla', 'ingresos', 'egresos', 'reportes', 'configuracion', 'usuarios'],
-  OPERADOR: ['dashboard', 'bitacora', 'flota', 'clientes', 'planilla', 'ingresos', 'egresos', 'reportes', 'configuracion'],
-  CONSULTA: ['dashboard', 'bitacora', 'flota', 'clientes', 'ingresos', 'egresos', 'reportes']
+  ADMIN: ['escritorio', 'dashboard', 'bitacora', 'flota', 'clientes', 'planilla', 'ingresos', 'egresos', 'reportes', 'configuracion', 'usuarios'],
+  OPERADOR: ['escritorio', 'dashboard', 'bitacora', 'flota', 'clientes', 'planilla', 'ingresos', 'egresos', 'reportes', 'configuracion'],
+  CONSULTA: ['escritorio', 'dashboard', 'bitacora', 'flota', 'clientes', 'ingresos', 'egresos', 'reportes']
 };
 
 const ETIQUETA_ROL = { ADMIN: 'Administrador', OPERADOR: 'Operador', CONSULTA: 'Consulta' };
@@ -243,7 +243,7 @@ async function alEntrarAlSistema() {
       return;
     }
   }
-  abrir('dashboard');
+  abrir('escritorio');
 }
 
 async function enviarLogin() {

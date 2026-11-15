@@ -5,6 +5,8 @@ const path = require('path');
 const { inicializarBaseDatos, cerrarBaseDatos, obtenerRutaBaseDatos } = require('./database');
 const { registrarIPC } = require('./ipc');
 
+app.commandLine.appendSwitch('lang', 'es-NI');
+
 let ventana;
 
 function crearVentana() {

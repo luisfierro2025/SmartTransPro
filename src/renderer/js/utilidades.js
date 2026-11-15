@@ -117,10 +117,127 @@ function alinearColumnasNumericas(raiz) {
   });
 }
 
+function iniciarAjusteColumnas() {
+  const inicializadas = new WeakSet();
+  const minimo = 50;
+
+  function claveTabla(tabla, cabeceras) {
+    const modulo = document.querySelector('.menu-item.active')?.dataset.module || 'general';
+    const contenedor = tabla.closest('[id]')?.id || 'sin-id';
+    return `control-empresa-columnas:${JSON.stringify([modulo, contenedor, cabeceras.map(th => th.textContent.trim())])}`;
+  }
+
+  function aplicarAnchos(tabla, anchos) {
+    let grupo = tabla.querySelector(':scope > colgroup[data-ajuste-columnas]');
+    if (!grupo) {
+      grupo = document.createElement('colgroup');
+      grupo.dataset.ajusteColumnas = '1';
+      tabla.insertBefore(grupo, tabla.firstChild);
+      tabla.dataset.anchoOriginal = tabla.style.width;
+    }
+    grupo.replaceChildren(...anchos.map(ancho => {
+      const col = document.createElement('col');
+      col.style.width = `${ancho}px`;
+      return col;
+    }));
+    tabla.classList.add('columnas-ajustadas');
+    tabla.style.width = `${anchos.reduce((total, ancho) => total + ancho, 0)}px`;
+  }
+
+  function guardar(clave, anchos) {
+    try {
+      localStorage.setItem(clave, JSON.stringify(anchos));
+    } catch (error) {
+      console.error('No se pudo guardar el ancho de las columnas:', error);
+      avisarAdvertencia('No se pudo guardar el ancho de las columnas', 'El ajuste solo estará disponible mientras la tabla permanezca abierta.');
+    }
+  }
+
+  function preparar(tabla) {
+    if (inicializadas.has(tabla) || tabla.classList.contains('ficha-datos')) return;
+    const fila = tabla.tHead?.rows[0];
+    if (!fila || tabla.tHead.rows.length !== 1) return;
+    const cabeceras = [...fila.cells];
+    if (!cabeceras.length || cabeceras.some(th => th.colSpan !== 1 || th.rowSpan !== 1)) return;
+    inicializadas.add(tabla);
+    const clave = claveTabla(tabla, cabeceras);
+    let guardados;
+    try {
+      guardados = JSON.parse(localStorage.getItem(clave));
+    } catch (error) {
+      console.error('No se pudo leer el ancho guardado de las columnas:', error);
+    }
+    if (Array.isArray(guardados) && guardados.length === cabeceras.length &&
+        guardados.every(ancho => Number.isFinite(ancho) && ancho >= minimo)) {
+      aplicarAnchos(tabla, guardados);
+    }
+
+    cabeceras.forEach((th, indice) => {
+      const control = document.createElement('span');
+      control.className = 'ajustar-columna';
+      control.tabIndex = 0;
+      control.setAttribute('role', 'separator');
+      control.setAttribute('aria-orientation', 'vertical');
+      control.setAttribute('aria-label', `Ajustar ancho de ${th.textContent.trim()}`);
+      control.setAttribute('aria-valuemin', String(minimo));
+      control.setAttribute('aria-valuemax', '100000');
+      control.setAttribute('aria-valuenow', String(Math.max(minimo, Math.round(th.getBoundingClientRect().width))));
+      control.title = 'Arrastra o usa las flechas para ajustar el ancho';
+      th.appendChild(control);
+
+      const medir = () => cabeceras.map(celda => Math.round(celda.getBoundingClientRect().width));
+      const ajustar = (anchos, ancho) => {
+        anchos[indice] = Math.max(minimo, Math.round(ancho));
+        aplicarAnchos(tabla, anchos);
+        control.setAttribute('aria-valuenow', String(anchos[indice]));
+      };
+      control.addEventListener('click', evento => evento.stopPropagation());
+      control.addEventListener('pointerdown', evento => {
+        if (evento.button !== 0) return;
+        evento.preventDefault();
+        evento.stopPropagation();
+        const anchos = medir();
+        const inicio = evento.clientX;
+        const anchoInicial = anchos[indice];
+        control.setPointerCapture(evento.pointerId);
+        const mover = e => ajustar(anchos, anchoInicial + e.clientX - inicio);
+        const terminar = e => {
+          control.removeEventListener('pointermove', mover);
+          control.removeEventListener('pointerup', terminar);
+          control.removeEventListener('pointercancel', terminar);
+          guardar(clave, anchos);
+        };
+        control.addEventListener('pointermove', mover);
+        control.addEventListener('pointerup', terminar);
+        control.addEventListener('pointercancel', terminar);
+      });
+      control.addEventListener('keydown', evento => {
+        if (evento.key !== 'ArrowLeft' && evento.key !== 'ArrowRight') return;
+        evento.preventDefault();
+        evento.stopPropagation();
+        const anchos = medir();
+        ajustar(anchos, anchos[indice] + (evento.key === 'ArrowRight' ? 10 : -10));
+        guardar(clave, anchos);
+      });
+    });
+  }
+
+  let pendiente = 0;
+  const pasada = () => {
+    pendiente = 0;
+    document.querySelectorAll('table').forEach(preparar);
+  };
+  new MutationObserver(() => {
+    if (!pendiente) pendiente = requestAnimationFrame(pasada);
+  }).observe(document.body, { childList: true, subtree: true });
+  pasada();
+}
+
 // Observa el área de trabajo: cada vez que un módulo (o una pestaña) dibuja
 // contenido nuevo, se arma la búsqueda automática y se alinean las columnas.
 function iniciarMejorasVisuales() {
   const c = document.getElementById('content'); if (!c) return;
+  iniciarAjusteColumnas();
   let pendiente = 0;
   const pasada = () => { pendiente = 0; activarBusquedaInteligenteYImpresion(c); alinearColumnasNumericas(c); };
   new MutationObserver(() => { if (!pendiente) pendiente = requestAnimationFrame(pasada); }).observe(c, { childList: true, subtree: true });
@@ -159,28 +276,23 @@ function escaparHtmlImpresion(valor) {
     .replace(/'/g, '&#39;');
 }
 
-function imprimirContenido({ titulo, filtrosTexto, resumenHtml, cuerpoHtml, bitacora = false }) {
+async function imprimirContenido({ titulo, filtrosTexto, resumenHtml, cuerpoHtml, bitacora = false }) {
   const nombreEmpresa = escaparHtmlImpresion(
     (document.getElementById('empresaDestacada') && document.getElementById('empresaDestacada').textContent.trim())
       || 'SmartTransPro'
   );
   const tituloSeguro = escaparHtmlImpresion(titulo || 'Reporte');
   const fecha = formatearFechaHora(new Date());
-  const ventana = window.open('', '_blank', 'width=1024,height=720');
-  if (!ventana) {
-    mostrarFichaImpresion({
-      estado: 'advertencia',
-      titulo: 'Permite las ventanas emergentes',
-      subtitulo: 'Tu navegador bloqueó la ventana de impresión, así que el reporte no se pudo abrir.',
-      pasos: [
-        'Haz clic en el icono de bloqueo de la barra de direcciones.',
-        'Elige "Permitir ventanas emergentes" para este sitio.',
-        'Vuelve a pulsar <b>Imprimir</b>.'
-      ]
-    });
-    return;
-  }
-  ventana.document.write(`
+  const contenido = document.createElement('template');
+  contenido.innerHTML = cuerpoHtml || '';
+  contenido.content.querySelectorAll('.ajustar-columna, colgroup[data-ajuste-columnas]').forEach(elemento => elemento.remove());
+  contenido.content.querySelectorAll('table.columnas-ajustadas').forEach(tabla => {
+    tabla.style.width = tabla.dataset.anchoOriginal || '';
+    tabla.classList.remove('columnas-ajustadas');
+    delete tabla.dataset.anchoOriginal;
+  });
+  cuerpoHtml = contenido.innerHTML;
+  const html = `
     <!doctype html>
     <html lang="es">
     <head>
@@ -190,7 +302,7 @@ function imprimirContenido({ titulo, filtrosTexto, resumenHtml, cuerpoHtml, bita
       <style>
         :root{color-scheme:light;--acento:#1d4ed8;--texto:#172033;--suave:#64748b;--borde:#dfe5ee;--fondo:#f5f7fb}
         *{box-sizing:border-box}
-        body{margin:0;background:#eef2f7;color:var(--texto);font:12px/1.45 "Segoe UI",Arial,sans-serif;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+        body{margin:0;background:#eef2f7;color:var(--texto);font:12px/1.45 "Aptos","Segoe UI","Helvetica Neue",Arial,sans-serif;-webkit-print-color-adjust:exact;print-color-adjust:exact}
         .documento-impresion{max-width:216mm;min-height:279mm;margin:20px auto;padding:17mm 15mm;background:#fff;box-shadow:0 4px 24px #17203320}
         .cab{display:flex;justify-content:space-between;align-items:flex-start;gap:20px;padding-bottom:13px;border-bottom:3px solid var(--acento)}
         .cab-marca{display:flex;align-items:center;gap:11px;min-width:0}
@@ -209,7 +321,7 @@ function imprimirContenido({ titulo, filtrosTexto, resumenHtml, cuerpoHtml, bita
         thead{display:table-header-group}
         tfoot{display:table-row-group}
         tr{break-inside:avoid;page-break-inside:avoid}
-        th{padding:8px 7px;border-bottom:2px solid #191627;background:#191627;color:#fff;text-align:left;font-size:8px;font-weight:700;letter-spacing:.045em;text-transform:uppercase}
+        th{padding:8px 7px;border-bottom:2px solid #475467;background:#475467;color:#fff;text-align:left;font-size:8px;font-weight:700;letter-spacing:.045em;text-transform:uppercase}
         td{padding:6px 7px;border-bottom:1px solid var(--borde);vertical-align:top}
         tbody tr:nth-child(even) td{background:#f7f9fc}
         tfoot td{border-top:2px solid #334155;background:#eef2f7;font-weight:750}
@@ -220,7 +332,7 @@ function imprimirContenido({ titulo, filtrosTexto, resumenHtml, cuerpoHtml, bita
         .documento-impresion.bitacora th:last-child,.documento-impresion.bitacora td:last-child{display:none}
         .pie{margin-top:18px;padding-top:8px;border-top:1px solid var(--borde);color:var(--suave);font-size:8px;text-align:center}
         button,.btn,.action-buttons{display:none!important}
-        @page{size:letter ${bitacora ? 'landscape' : 'portrait'};margin:16mm 14mm 18mm;@bottom-left{content:"SmartTransPro · documento operativo";font:8px "Segoe UI",Arial,sans-serif;color:#64748b}@bottom-right{content:"Página " counter(page) " de " counter(pages);font:8px "Segoe UI",Arial,sans-serif;color:#64748b}}
+        @page{size:letter ${bitacora ? 'landscape' : 'portrait'};margin:16mm 14mm 18mm;@bottom-left{content:"SmartTransPro · documento operativo";font:8px "Aptos","Segoe UI",Arial,sans-serif;color:#64748b}@bottom-right{content:"Página " counter(page) " de " counter(pages);font:8px "Aptos","Segoe UI",Arial,sans-serif;color:#64748b}}
         @media print{body{background:#fff}.documento-impresion{max-width:none;min-height:0;margin:0;padding:0;box-shadow:none}.table-wrap{break-inside:auto}}
         @media screen and (max-width:700px){.documento-impresion{min-height:0;margin:0;padding:20px}.metrics-grid,.resumen-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.cab{gap:10px}.cab-meta{max-width:140px}}
       </style>
@@ -241,12 +353,42 @@ function imprimirContenido({ titulo, filtrosTexto, resumenHtml, cuerpoHtml, bita
       </main>
     </body>
     </html>
-  `);
-  ventana.document.close();
-  ventana.focus();
-  setTimeout(() => ventana.print(), 300);
-  // Ficha informativa: el alert ya no se usa, y aquí el usuario confirmaba
-  // en blanco que la impresión se había abierto.
+  `;
+  if (puedeImprimirEnElectron()) {
+    try {
+      const resultado = await window.api.reportes.imprimirHtml(html, { landscape: bitacora });
+      if (!resultado || !resultado.ok) {
+        mostrarFichaImpresion({
+          estado: resultado && resultado.cancelado ? 'advertencia' : 'error',
+          titulo: resultado && resultado.cancelado ? 'Impresión cancelada' : 'No se pudo imprimir el reporte',
+          subtitulo: resultado && resultado.mensaje ? resultado.mensaje : 'Electron no pudo enviar el documento a la impresora.',
+          campos: [['Reporte', tituloSeguro]],
+          boton: 'Cerrar'
+        });
+        return resultado;
+      }
+    } catch (error) {
+      mostrarFichaImpresion({
+        estado: 'error',
+        titulo: 'No se pudo imprimir el reporte',
+        subtitulo: error.message || 'Ocurrió un error al abrir el diálogo de impresión de Electron.',
+        campos: [['Reporte', tituloSeguro]],
+        boton: 'Cerrar'
+      });
+      return { ok: false, mensaje: error.message };
+    }
+    mostrarFichaImpresion({
+      estado: 'exito',
+      titulo: 'Reporte enviado a impresión',
+      subtitulo: 'La impresión se gestionó desde el diálogo del sistema de Electron.',
+      documentoTitulo: 'Contenido del reporte',
+      campos: [['Reporte', tituloSeguro], ['Generado', fecha]]
+    });
+    return { ok: true };
+  }
+
+  const abierta = imprimirHtmlEnVentana(html, `${tituloSeguro} - SmartTransPro`);
+  if (!abierta) return { ok: false, mensaje: 'No se pudo abrir la ventana de impresión.' };
   mostrarFichaImpresion({
     estado: 'exito',
     titulo: 'Reporte enviado a imprimir',
@@ -258,38 +400,39 @@ function imprimirContenido({ titulo, filtrosTexto, resumenHtml, cuerpoHtml, bita
       'Elige la impresora o la opción <b>Guardar como PDF</b>.'
     ]
   });
+  return { ok: true };
 }
 
-// ---------------------------------------------------------------- documentos PDF profesionales
-// A diferencia de imprimirContenido() (que solo copia la tabla a una ventana y
-// llama a window.print()), esto arma un documento con membrete, resumen y
-// firmas, y lo entrega como un PDF real generado por Electron para que el
-// usuario lo guarde, revise y luego imprima o envíe.
+// ---------------------------------------------------------------- documentos profesionales de impresión
 function documentoProfesionalHtml({ titulo, subtitulo, filtrosTexto, resumenHtml, cuerpoHtml, piePersonalizado, tamanoPagina }) {
-  const nombreEmpresa = (document.getElementById('empresaDestacada') && document.getElementById('empresaDestacada').textContent.trim()) || 'SmartTransPro';
+  const nombreEmpresa = escaparHtmlImpresion(
+    (document.getElementById('empresaDestacada') && document.getElementById('empresaDestacada').textContent.trim()) || 'SmartTransPro'
+  );
+  const tituloSeguro = escaparHtmlImpresion(titulo || 'Documento');
+  const subtituloSeguro = escaparHtmlImpresion(subtitulo || '');
   const generado = formatearFechaHora(new Date());
   return `
     <!doctype html>
     <html lang="es">
     <head>
       <meta charset="UTF-8">
-      <title>${titulo}</title>
+      <title>${tituloSeguro}</title>
       <style>
         *{box-sizing:border-box}
         @page{size:${tamanoPagina || 'letter'};margin:20mm 14mm 16mm}
-        body{font-family:Arial,Helvetica,sans-serif;color:#17202a;margin:0;font-size:12.5px}
+        body{font-family:"Aptos","Segoe UI","Helvetica Neue",Arial,sans-serif;color:#17202a;margin:0;font-size:12px;line-height:1.45;-webkit-print-color-adjust:exact;print-color-adjust:exact}
         .membrete{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid #344054;padding-bottom:12px;margin-bottom:16px}
-        .membrete-empresa{font-size:21px;font-weight:800;color:#344054;letter-spacing:.2px}
+        .membrete-empresa{font-size:20px;font-weight:750;color:#344054;letter-spacing:-.02em}
         .membrete-doc{margin-top:4px;font-size:14px;font-weight:700;color:#17202a}
-        .membrete-sub{margin-top:2px;font-size:11.5px;color:#667085}
+        .membrete-sub{margin-top:2px;font-size:11px;color:#667085}
         .membrete-meta{text-align:right;font-size:10.5px;color:#667085;white-space:nowrap}
         .filtros{margin:0 0 16px;font-size:11.5px;color:#344054;background:#f2f4f7;padding:9px 13px;border-radius:6px;border:1px solid #e2e6ea}
         .resumen-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:18px}
         .resumen-caja{border:1px solid #e2e6ea;border-top:3px solid #344054;border-radius:7px;padding:10px 12px;background:#f8f9fa}
         .resumen-caja .et{font-size:10px;color:#667085;text-transform:uppercase;letter-spacing:.3px}
         .resumen-caja .val{font-size:16px;font-weight:700;color:#17202a;margin-top:4px}
-        table{width:100%;border-collapse:collapse;font-size:11.5px}
-        thead th{background:#191627;color:#fff;text-align:left;padding:8px 9px;font-weight:600}
+        table{width:100%;border-collapse:collapse;font-size:10.5px;font-variant-numeric:tabular-nums}
+        thead th{background:#475467;color:#fff;text-align:left;padding:8px 9px;font-weight:600}
         tbody td{border-bottom:1px solid #e2e6ea;padding:7px 9px}
         tbody tr:nth-child(even){background:#f8f9fa}
         tfoot td{border-top:2px solid #344054;padding:9px;font-weight:700;background:#f2f4f7}
@@ -304,8 +447,8 @@ function documentoProfesionalHtml({ titulo, subtitulo, filtrosTexto, resumenHtml
       <div class="membrete">
         <div>
           <div class="membrete-empresa">${nombreEmpresa}</div>
-          <div class="membrete-doc">${titulo}</div>
-          ${subtitulo ? `<div class="membrete-sub">${subtitulo}</div>` : ''}
+          <div class="membrete-doc">${tituloSeguro}</div>
+          ${subtituloSeguro ? `<div class="membrete-sub">${subtituloSeguro}</div>` : ''}
         </div>
         <div class="membrete-meta">Generado: ${generado}<br>Sistema SmartTransPro</div>
       </div>
@@ -323,7 +466,7 @@ function documentoProfesionalHtml({ titulo, subtitulo, filtrosTexto, resumenHtml
 }
 
 // ---------------------------------------------------------------- reportes de módulos
-// Construye y entrega (vía imprimirComoPdf) el reporte de un listado genérico:
+// Construye y entrega (vía imprimirConPlantillaProfesional) el reporte de un listado genérico:
 // filas ya armadas como celdas HTML, columnas con etiqueta y estilo, totales y
 // filtros. La usan Bitácora, Flota, Planilla, Viáticos y Comisiones para no
 // repetir en cada módulo el armado de la tabla del PDF.
@@ -362,7 +505,7 @@ async function imprimirListadoModulo({
         ${totalesFila ? `<tfoot><tr>${totalesFila.map((celda, i) => `<td${i === 0 ? ` colspan="${totalesFila.length - 1}"` : ' style="text-align:right"'}>${celda}</td>`).join('')}</tr></tfoot>` : ''}
       </table>
       ${cuerpoExtraHtml}`;
-  await imprimirComoPdf({
+  await imprimirConPlantillaProfesional({
     titulo,
     subtitulo,
     filtrosTexto,
@@ -696,6 +839,10 @@ function puedeGenerarPdfNativo() {
   return tieneApiDeEscritorio('reportes', 'pdf');
 }
 
+function puedeImprimirEnElectron() {
+  return tieneApiDeEscritorio('reportes', 'imprimirHtml');
+}
+
 function puedeGuardarEnDisco() {
   return tieneApiDeEscritorio('archivos', 'guardarImagen');
 }
@@ -745,35 +892,41 @@ function imprimirHtmlEnVentana(html, titulo = 'Documento') {
   return true;
 }
 
-// Genera el documento con documentoProfesionalHtml() y lo entrega como PDF real.
-// En escritorio se usa el motor de Chromium de Electron (window.api.reportes.pdf);
-// en la nube se abre el mismo documento en el diálogo de impresión del navegador.
-// Muestra un estado de carga breve en el botón que dispara la acción.
-async function imprimirComoPdf(opciones, boton) {
+// Usa el diálogo nativo de impresión de Electron; en la versión web conserva
+// la vista de impresión del navegador.
+async function imprimirConPlantillaProfesional(opciones, boton) {
   const textoOriginal = boton ? boton.innerHTML : null;
-  if (boton) { boton.disabled = true; boton.innerHTML = 'Generando PDF...'; }
+  if (boton) { boton.disabled = true; boton.innerHTML = 'Preparando impresión...'; }
   // Datos del documento para la ficha: el mismo membrete que se va a imprimir.
   const ficha = {
     documentoTitulo: 'Documento a imprimir',
     campos: [
       ['Título', opciones.titulo || 'Documento'],
-      ...(opciones.subtitulo ? [['Detalle', opciones.subtitulo.replace(/<[^>]+>/g, '')]] : []),
-      ...(opciones.nombreArchivo ? [['Archivo', `${opciones.nombreArchivo}.pdf`]] : [])
+      ...(opciones.subtitulo ? [['Detalle', opciones.subtitulo.replace(/<[^>]+>/g, '')]] : [])
     ]
   };
   try {
     const html = documentoProfesionalHtml(opciones);
-    if (puedeGenerarPdfNativo()) {
-      const resultado = await window.api.reportes.pdf(html, opciones.nombreArchivo || 'reporte');
-      if (resultado && resultado.ok === false && !resultado.cancelado) {
+    if (puedeImprimirEnElectron()) {
+      const resultado = await window.api.reportes.imprimirHtml(html, {
+        landscape: String(opciones.tamanoPagina || '').toLowerCase().includes('landscape')
+      });
+      if (!resultado || !resultado.ok) {
         mostrarFichaImpresion({
-          estado: 'error',
-          titulo: 'No se pudo generar el PDF',
-          subtitulo: (resultado && resultado.error) || 'Ocurrió un problema al crear el archivo.',
+          estado: resultado && resultado.cancelado ? 'advertencia' : 'error',
+          titulo: resultado && resultado.cancelado ? 'Impresión cancelada' : 'No se pudo imprimir el documento',
+          subtitulo: (resultado && resultado.mensaje) || 'Electron no pudo enviar el documento a la impresora.',
           ...ficha,
           boton: 'Cerrar'
         });
+        return resultado;
       }
+      mostrarFichaImpresion({
+        estado: 'exito',
+        titulo: 'Documento enviado a impresión',
+        subtitulo: 'Se utilizó el diálogo del sistema de Electron para elegir la impresora o guardar como PDF.',
+        ...ficha
+      });
     } else {
       // Sin await previo: la ventana debe abrirse dentro del clic del usuario
       // o el navegador la bloqueará como ventana emergente.
@@ -782,28 +935,27 @@ async function imprimirComoPdf(opciones, boton) {
         mostrarFichaImpresion({
           estado: 'exito',
           titulo: 'Documento enviado a imprimir',
-          subtitulo: 'Se abrió en una ventana nueva. Revisa la vista previa y elige la impresora o "Guardar como PDF".',
+          subtitulo: 'Se abrió la vista de impresión del navegador.',
           ...ficha,
           pasos: [
-            'En la ventana que se abrió, revisa que la imagen se vea completa.',
-            'Elige la impresora o la opción <b>Guardar como PDF</b>.',
-            'Vuelve aquí y cierra esta ficha cuando termines.'
+            'Revisa la vista previa del documento.',
+            'Elige una impresora o la opción <b>Guardar como PDF</b>.'
           ],
           boton: 'Entendido'
         });
       }
+      return { ok: abierta };
     }
   } catch (err) {
     mostrarFichaImpresion({
       estado: 'error',
-      titulo: 'No se pudo generar el PDF',
+      titulo: 'No se pudo imprimir el documento',
       subtitulo: err.message,
       ...ficha,
       boton: 'Cerrar'
     });
+    return { ok: false, mensaje: err.message };
   } finally {
-    // La ficha no se espera a propósito: si se esperara, el botón quedaría en
-    // "Generando PDF..." hasta que el usuario la cerrara.
     if (boton) { boton.disabled = false; boton.innerHTML = textoOriginal; }
   }
 }

@@ -6,19 +6,33 @@ async function renderFlota(){
         <h2>Control de Flota, Conductores y Combustible</h2>
         <p>Gestión de unidades de transporte, asignación de choferes, consumo de combustible y monitoreo en vivo.</p>
       </div>
-      <div class="page-actions">
-        <button id="btnImprimirFlota" class="btn btn-warning" type="button">🖨️ Imprimir Reporte</button>
-        <button id="btnNuevoVehiculo" class="btn primary">+ Registrar Vehículo</button>
-        <button id="btnNuevoConductor" class="btn secondary">+ Registrar Conductor</button>
-        <button id="btnNuevoCombustible" class="btn btn-warning">+ Cargar Combustible</button>
-      </div>
     </div>
 
-    <div class="nav-tabs">
-      <button class="tab-btn active" data-tab="tabVehiculos">Vehículos / Unidades</button>
-      <button class="tab-btn" data-tab="tabConductores">Conductores / Choferes</button>
-      <button class="tab-btn" data-tab="tabCombustible">Control de Combustible</button>
-      <button class="tab-btn" data-tab="tabMonitoreo">📍 Monitoreo</button>
+    <div class="flota-navigation">
+      <nav class="nav-tabs flota-tabs" aria-label="Secciones de flota">
+      <button type="button" class="tab-btn active" data-tab="tabVehiculos" aria-controls="tabVehiculos" aria-pressed="true">
+        <span class="flota-tab-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 13l2-6h14l2 6"/><path d="M5 13h14a2 2 0 0 1 2 2v3h-2"/><path d="M3 18v-3a2 2 0 0 1 2-2"/><circle cx="7.5" cy="18" r="1.5"/><circle cx="16.5" cy="18" r="1.5"/><path d="M5 7l1.5-3h11L19 7"/></svg></span>
+        <span class="flota-tab-label">Vehículos / Unidades</span>
+      </button>
+      <button type="button" class="tab-btn" data-tab="tabConductores" aria-controls="tabConductores" aria-pressed="false">
+        <span class="flota-tab-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="3.5"/><path d="M5 20a7 7 0 0 1 14 0"/><path d="M19 5h2v5h-2"/></svg></span>
+        <span class="flota-tab-label">Conductores / Choferes</span>
+      </button>
+      <button type="button" class="tab-btn" data-tab="tabCombustible" aria-controls="tabCombustible" aria-pressed="false">
+        <span class="flota-tab-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 21V5a2 2 0 0 1 2-2h7a2 2 0 0 1 2 2v16"/><path d="M5 10h11M8 7h5"/><path d="M16 8h2l2 2v7a2 2 0 0 1-4 0v-4h3"/><path d="M3 21h16"/></svg></span>
+        <span class="flota-tab-label">Control de Combustible</span>
+      </button>
+      <button type="button" class="tab-btn" data-tab="tabMonitoreo" aria-controls="tabMonitoreo" aria-pressed="false">
+        <span class="flota-tab-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 5-8 12-8 12S4 15 4 10a8 8 0 1 1 16 0Z"/><circle cx="12" cy="10" r="2.5"/></svg></span>
+        <span class="flota-tab-label">Monitoreo</span>
+      </button>
+      </nav>
+      <div class="flota-tab-actions">
+        <button id="btnImprimirFlota" class="btn btn-warning" type="button">🖨️ Imprimir Reporte</button>
+        <button id="btnNuevoVehiculo" class="btn primary" type="button">+ Registrar Vehículo</button>
+        <button id="btnNuevoConductor" class="btn secondary" type="button">+ Registrar Conductor</button>
+        <button id="btnNuevoCombustible" class="btn btn-warning" type="button">+ Cargar Combustible</button>
+      </div>
     </div>
 
     <div id="tabVehiculos" class="tab-content active">
@@ -127,9 +141,13 @@ async function renderFlota(){
   const monitoreo = iniciarMonitoreo(document.getElementById('tabMonitoreo'));
   tabBtns.forEach(b => {
     b.addEventListener('click', () => {
-      tabBtns.forEach(x => x.classList.remove('active'));
+      tabBtns.forEach(x => {
+        x.classList.remove('active');
+        x.setAttribute('aria-pressed', 'false');
+      });
       tabContents.forEach(x => x.classList.remove('active'));
       b.classList.add('active');
+      b.setAttribute('aria-pressed', 'true');
       document.getElementById(b.dataset.tab).classList.add('active');
       // El mapa necesita su contenedor visible: se activa después de mostrar la pestaña.
       if (b.dataset.tab === 'tabMonitoreo') monitoreo.activar(); else monitoreo.desactivar();
@@ -465,7 +483,7 @@ async function renderFlota(){
       b.onclick = () => {
         const d = documentos.find(x => x.id === b.dataset.doc);
         if (!d || !d.src) return;
-        imprimirComoPdf({
+        imprimirConPlantillaProfesional({
           titulo: `Documento de Conductor: ${d.etiqueta}`,
           subtitulo: `Conductor: ${esc(item.nombre)}${item.documento ? ' · Cédula: ' + esc(item.documento) : ''}${item.numero_licencia ? ' · Licencia: ' + item.numero_licencia : ''}`,
           cuerpoHtml: `<div style="text-align:center;margin-top:12px;"><img src="${d.src}" style="max-width:100%;max-height:220mm;border:1px solid #d0d5dd;border-radius:6px;"></div>`,
@@ -1347,22 +1365,24 @@ async function renderClientes(){
         <h2>Cartera de Clientes</h2>
         <p>Registro de empresas, consignatarios, personas de contacto y direcciones de entrega.</p>
       </div>
-      <div class="page-actions">
-        <button id="btnAgregarFilaCliente" class="btn" type="button">+ Agregar en tabla</button>
-        <button id="btnNuevoCliente" class="btn primary">+ Registrar Cliente</button>
-      </div>
     </div>
 
-    <div class="panel">
-      <div class="toolbar">
+    <div class="clientes-actions-row">
+      <div class="clientes-search-box">
         <div class="field">
           <label>Buscar Cliente</label>
           <input id="buscarCliente" type="text" placeholder="Nombre, RUC, teléfono o contacto...">
         </div>
-        <button id="btnBuscarCli" class="btn primary">Buscar</button>
-        <button id="btnLimpiarCli" class="btn">Limpiar</button>
+        <button id="btnBuscarCli" class="btn primary" type="button">Buscar</button>
+        <button id="btnLimpiarCli" class="btn" type="button">Limpiar</button>
       </div>
+      <div class="clientes-toolbar-actions">
+        <button id="btnAgregarFilaCliente" class="btn" type="button">+ Agregar en tabla</button>
+        <button id="btnNuevoCliente" class="btn primary" type="button">+ Registrar Cliente</button>
+      </div>
+    </div>
 
+    <div class="panel">
       <div id="tablaClientes" class="table-wrap">
         <div class="empty">Cargando clientes...</div>
       </div>

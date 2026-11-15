@@ -146,15 +146,21 @@
               <p class="panel__desc">Inventario completo con estado, vencimiento y consumo de equipos.</p>
             </div>
             <div class="panel__tools">
-              <div class="search">
-                <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6"/><path d="M20 20l-3.6-3.6"/></svg>
-                <input id="buscar" type="search" placeholder="Buscar codigo, cliente o producto..." aria-label="Buscar licencias">
+              <div class="filter-field filter-field--search">
+                <label class="filter-field__label" for="buscar">Buscar licencias</label>
+                <div class="search">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6"/><path d="M20 20l-3.6-3.6"/></svg>
+                  <input id="buscar" type="search" placeholder="Codigo, cliente o producto...">
+                </div>
               </div>
-              <div class="seg" id="filtros" role="group" aria-label="Filtrar por estado">
-                <button class="seg__btn is-active" data-estado="TODOS" type="button">Todas</button>
-                <button class="seg__btn" data-estado="ACTIVA" type="button">Activas</button>
-                <button class="seg__btn" data-estado="SUSPENDIDA" type="button">Suspendidas</button>
-                <button class="seg__btn" data-estado="VENCIDA" type="button">Vencidas</button>
+              <div class="filter-field">
+                <span class="filter-field__label">Estado</span>
+                <div class="seg" id="filtros" role="group" aria-label="Filtrar por estado">
+                  <button class="seg__btn is-active" data-estado="TODOS" type="button">Todas</button>
+                  <button class="seg__btn" data-estado="ACTIVA" type="button">Activas</button>
+                  <button class="seg__btn" data-estado="SUSPENDIDA" type="button">Suspendidas</button>
+                  <button class="seg__btn" data-estado="VENCIDA" type="button">Vencidas</button>
+                </div>
               </div>
             </div>
           </div>

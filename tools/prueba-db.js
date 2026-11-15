@@ -82,11 +82,8 @@ async function ejecutar() {
   const egr = await operaciones['egresos:guardar'](null, { fecha: '2026-09-15', concepto: 'Compra de prueba', categoria: 'Repuestos', beneficiario: 'Proveedor X', monto: 1800, metodo: 'Efectivo' });
   const resEgresos = await operaciones['egresos:resumen'](null, {});
   verificar('El resumen de egresos funciona', resEgresos.total === 1800 && resEgresos.cantidad === 1, resEgresos);
-  await operaciones['egresos:eliminar'](null, egr.id);
-  verificar('Se eliminan egresos', filas('egresos') === 0);
-
   console.log('\n5) Viáticos');
-  await operaciones['viaticos:guardar'](null, { empleado_id: emp1.id, fecha: '2026-09-12', destino: 'León', motivo: 'Entrega', monto: 1000, liquidado: 0 });
+  const viaticoPendienteAnterior = await operaciones['viaticos:guardar'](null, { empleado_id: emp1.id, fecha: '2026-09-12', destino: 'León', motivo: 'Entrega', monto: 1000, liquidado: 0 });
   const via2 = await operaciones['viaticos:guardar'](null, { empleado_id: emp1.id, fecha: '2026-09-18', destino: 'Masaya', motivo: 'Cobro', monto: 500, liquidado: 0 });
   verificar('Los viáticos se guardan como pendientes', (await operaciones['viaticos:resumen'](null, {})).pendiente === 1500);
   await operaciones['viaticos:liquidar'](null, via2.id);
@@ -167,18 +164,43 @@ async function ejecutar() {
   await operaciones['viaticos:guardar'](null, { conductor_id: condViaje, fecha: '2026-10-08', destino: 'Granada', motivo: 'Gestión', monto: 300 });
   verificar('Los viáticos sin viaje se pueden repetir', (await operaciones['viaticos:listar'](null, { busqueda: 'Granada' })).length === 2);
 
-  // Tablero del dashboard. Se consulta un rango fijo (2026-09) donde ya hay
-  // ingresos y egresos de la sección 4, para poder comprobar las cuentas.
+  // Tablero del dashboard. Se consulta un rango fijo (2026-09) con ingresos y
+  // un egreso para comprobar que los totales y las categorías se actualizan.
   const tablero = await operaciones['dashboard:tablero'](null, { desde: '2026-09-01', hasta: '2026-09-30' });
   verificar('El tablero devuelve las secciones que la pantalla usa',
     ['financiero', 'serie', 'operativo', 'pendientes'].every(s => tablero[s] !== undefined),
     Object.keys(tablero));
   // En la sección 4 se registraron dos ingresos en 2026-09 (5000 + 2500) y un
-  // egreso de 1800 que luego se borró, así que solo quedan los ingresos.
+  // egreso de 1800.
   verificar('El tablero suma los ingresos del período',
     tablero.financiero.ingresos === 7500, tablero.financiero.ingresos);
-  verificar('El tablero descuenta los egresos que quedaron',
-    tablero.financiero.egresos === 0, tablero.financiero.egresos);
+  verificar('El tablero suma los egresos del período',
+    tablero.financiero.egresos === 1800, tablero.financiero.egresos);
+  verificar('El tablero muestra la categoría del egreso',
+    tablero.financiero.porCategoriaEgresos.some(c => c.categoria === 'Repuestos' && c.total === 1800),
+    tablero.financiero.porCategoriaEgresos);
+  await operaciones['egresos:guardar'](null, {
+    id: egr.id, fecha: '2026-09-15', concepto: 'Compra de prueba actualizada', categoria: 'Repuestos',
+    beneficiario: 'Proveedor X', monto: 2200, metodo: 'Efectivo'
+  });
+  const tableroActualizado = await operaciones['dashboard:tablero'](null, { desde: '2026-09-01', hasta: '2026-09-30' });
+  verificar('El tablero refleja una edición del egreso al volver a consultarlo',
+    tableroActualizado.financiero.egresos === 2200
+      && tableroActualizado.financiero.porCategoriaEgresos.some(c => c.categoria === 'Repuestos' && c.total === 2200),
+    tableroActualizado.financiero);
+  const tableroHistorico = await operaciones['dashboard:tablero'](null, { desde: null, hasta: '2026-12-31' });
+  verificar('El período histórico incluye los egresos y costos guardados sin exigir fecha inicial',
+    tableroHistorico.financiero.egresos === 2200
+      && tableroHistorico.financiero.porCategoriaEgresos.some(c => c.categoria === 'Repuestos' && c.total === 2200)
+      && tableroHistorico.financiero.planilla > 0
+      && tableroHistorico.rango.previo === null,
+    { financiero: tableroHistorico.financiero, rango: tableroHistorico.rango });
+  await operaciones['egresos:eliminar'](null, egr.id);
+  const tableroTrasEliminar = await operaciones['dashboard:tablero'](null, { desde: '2026-09-01', hasta: '2026-09-30' });
+  verificar('El tablero refleja la eliminación del egreso al volver a consultarlo',
+    filas('egresos') === 0 && tableroTrasEliminar.financiero.egresos === 0
+      && tableroTrasEliminar.financiero.porCategoriaEgresos.length === 0,
+    { egresos: filas('egresos'), resumen: tableroTrasEliminar.financiero });
   verificar('La utilidad es ingresos menos egresos y costos operativos',
     tablero.financiero.utilidad === tablero.financiero.ingresos - tablero.financiero.egresos - tablero.financiero.costosOperativos,
     tablero.financiero);
@@ -245,6 +267,28 @@ async function ejecutar() {
   verificar('El resumen de comisiones separa pendiente y pagado',
     resumenCom.total === 1500 && resumenCom.pendiente === 1500 && resumenCom.pagado === 0 && resumenCom.cantidadPendiente === 2, resumenCom);
 
+  // Comisión por destino: la tarifa sale de la tabla origen -> destino.
+  const tarifaRuta = await operaciones['tarifas_destino:guardar'](null, { origen: 'Managua', destino: 'León', valor: 1250 });
+  let rutaRepetida = false;
+  try { await operaciones['tarifas_destino:guardar'](null, { origen: 'MANAGUA', destino: 'León', valor: 10 }); } catch { rutaRepetida = true; }
+  verificar('No se permite repetir la tarifa de una misma ruta', rutaRepetida);
+  const tarifaViaje = await operaciones['tarifas_destino:buscar'](null, { viaje_id: viajePrueba });
+  verificar('La tarifa se encuentra por la ruta del viaje', tarifaViaje && tarifaViaje.valor === 1250, tarifaViaje);
+  const comDestino = await operaciones['comisiones:guardar'](null, {
+    conductor_id: conductorPrueba, viaje_id: viajePrueba, fecha: '2026-09-13', periodo: '2026-09',
+    concepto: 'Comisión por destino', tipo: 'POR_DESTINO'
+  });
+  const filaDestino = (await operaciones['comisiones:listar'](null, { tipo: 'POR_DESTINO' }))[0];
+  verificar('La comisión por destino toma la tarifa de la ruta del viaje',
+    filaDestino && filaDestino.monto === 1250 && filaDestino.valor_calculo === 1250, filaDestino);
+  await operaciones['comisiones:eliminar'](null, comDestino.id);
+  await operaciones['tarifas_destino:eliminar'](null, tarifaRuta.id);
+  let sinTarifa = false;
+  try {
+    await operaciones['comisiones:guardar'](null, { conductor_id: conductorPrueba, viaje_id: viajePrueba, fecha: '2026-09-13', tipo: 'POR_DESTINO' });
+  } catch { sinTarifa = true; }
+  verificar('Sin tarifa para la ruta, la comisión por destino se rechaza', sinTarifa);
+
   await operaciones['comisiones:pagar'](null, comisionPorcentaje.id);
   const resumenCom2 = await operaciones['comisiones:resumen'](null, {});
   verificar('El pago mueve el monto a pagado', resumenCom2.pagado === 900 && resumenCom2.pendiente === 600, resumenCom2);
@@ -261,6 +305,83 @@ async function ejecutar() {
     editada.id === comisionPorcentaje.id && comisionFija.monto === 750, comisionFija);
   await operaciones['comisiones:eliminar'](null, comisionPorcentaje.id);
   verificar('Se eliminan comisiones', (await operaciones['comisiones:listar'](null, {})).length === 1);
+
+  console.log('\n6.1) Comisiones y viáticos en planilla');
+  const empleadoPlanilla = (await operaciones['empleados:listar'](null, {})).find(e => e.id === emp1.id);
+  await operaciones['empleados:guardar'](null, { ...empleadoPlanilla, conductor_id: conductorPrueba });
+  const comisionPlanilla = await operaciones['comisiones:guardar'](null, {
+    conductor_id: conductorPrueba, fecha: '2026-10-12', periodo: '2026-10',
+    concepto: 'Comisión para planilla', tipo: 'PORCENTAJE', base_calculo: 20000, valor_calculo: 5
+  });
+  const viaticoPlanilla = await operaciones['viaticos:guardar'](null, {
+    conductor_id: conductorPrueba, fecha: '2026-10-15', destino: 'León',
+    motivo: 'Reembolso de prueba', monto: 350, liquidado: 0
+  });
+  const movimientosPendientes = await operaciones['planilla:movimientos_pendientes'](null, { periodo: '2026-10' });
+  verificar('El empleado vinculado recibe sus comisiones y viáticos pendientes',
+    movimientosPendientes.comisiones.some(m => m.id === comisionPlanilla.id && m.empleado_id === emp1.id)
+      && movimientosPendientes.viaticos.some(m => m.id === viaticoPlanilla.id && m.empleado_id === emp1.id)
+      && movimientosPendientes.viaticos.some(m => m.id === viaticoPendienteAnterior.id && m.empleado_id === emp1.id),
+    movimientosPendientes);
+  verificar('Los viáticos pendientes aparecen aunque su fecha sea posterior al período',
+    (await operaciones['planilla:movimientos_pendientes'](null, { periodo: '2026-08' })).viaticos.some(m => m.id === viaticoPendienteAnterior.id));
+  const condAuto = dbViaje.prepare("INSERT INTO conductores (nombre, documento) VALUES ('Conductor Auto', '001-000000-0099Z')").run().lastInsertRowid;
+  const empAuto = await operaciones['empleados:guardar'](null, { nombre: 'Empleado Auto', cedula: '001-000000-0099Z', cargo: 'Conductor', salario_base: 1000, conductor_id: condAuto });
+  const viajeAuto = dbViaje.prepare('INSERT INTO bitacora_viajes (fecha, conductor_id, origen, destino, viatico, estado) VALUES (?, ?, ?, ?, ?, ?)')
+    .run('2026-08-20', condAuto, 'Managua', 'Estelí', 800, 'COMPLETADO').lastInsertRowid;
+  const viajeEnCurso = dbViaje.prepare('INSERT INTO bitacora_viajes (fecha, conductor_id, origen, destino, viatico, estado) VALUES (?, ?, ?, ?, ?, ?)')
+    .run('2026-08-21', condAuto, 'Managua', 'Leon', 300, 'EN CURSO').lastInsertRowid;
+  const pendientesAuto = await operaciones['planilla:movimientos_pendientes'](null, { periodo: '2026-10' });
+  const viaticoViajeEnCurso = await operaciones['viaticos:guardar'](null, { conductor_id: condAuto, viaje_id: viajeEnCurso, fecha: '2026-08-21', destino: 'Leon', monto: 300 });
+  let pagoBloqueado = false;
+  try { await operaciones['viaticos:liquidar'](null, viaticoViajeEnCurso.id); } catch (err) { pagoBloqueado = /completado/i.test(err.message); }
+  verificar('No se puede pagar el viático de un viaje que no está completado', pagoBloqueado);
+  dbViaje.prepare("UPDATE bitacora_viajes SET estado='COMPLETADO' WHERE id=?").run(viajeEnCurso);
+  await operaciones['viaticos:liquidar'](null, viaticoViajeEnCurso.id);
+  verificar('Al completarse el viaje el viático ya se puede pagar',
+    (await operaciones['viaticos:listar'](null, {})).find(v => v.id === viaticoViajeEnCurso.id).liquidado === 1);
+  verificar('El viático de un viaje en curso no está disponible hasta completarlo',
+    !pendientesAuto.viaticos.some(m => m.monto === 300) && !(await operaciones['viaticos:viajes_disponibles'](null, { conductor_id: condAuto })).some(v => v.id === viajeEnCurso));
+  const viaticoAuto = pendientesAuto.viaticos.find(m => m.empleado_id === empAuto.id && m.monto === 800);
+  verificar('El viático capturado en la bitácora aparece como pendiente en la planilla', !!viaticoAuto, pendientesAuto.viaticos);
+  const repetido = await operaciones['planilla:movimientos_pendientes'](null, { periodo: '2026-10' });
+  verificar('El viático del viaje no se duplica al consultar de nuevo',
+    repetido.viaticos.filter(m => m.empleado_id === empAuto.id).length === 1);
+  const planillaIntegrada = await operaciones['planilla:guardar'](null, {
+    periodo: '2026-10', fecha_pago: '2026-10-31', estado: 'BORRADOR',
+    detalle: [{ empleado_id: emp1.id, salario: 15000, horas_extra: 0, bonificaciones: 0, deducciones: 500 }],
+    movimientos: [
+      { tipo: 'COMISION', id: comisionPlanilla.id, monto: 1250 },
+      { tipo: 'VIATICO', id: viaticoPlanilla.id, monto: 500 }
+    ]
+  });
+  let detalleIntegrado = await operaciones['planilla:obtener'](null, planillaIntegrada.id);
+  verificar('La edición desde planilla actualiza los movimientos originales y los totales',
+    detalleIntegrado.total_bruto === 16250 && detalleIntegrado.total_neto === 15750
+      && detalleIntegrado.total_viaticos === 1500 && detalleIntegrado.total_a_pagar === 17250
+      && detalleIntegrado.detalle[0].comisiones === 1250 && detalleIntegrado.detalle[0].viaticos === 1500
+      && (await operaciones['comisiones:listar'](null, { periodo: '2026-10' }))[0].monto === 1250
+      && (await operaciones['comisiones:listar'](null, { periodo: '2026-10' }))[0].valor_calculo === 6.25
+      && (await operaciones['viaticos:listar'](null, { desde: '2026-10-01', hasta: '2026-10-31' }))[0].monto === 500,
+    detalleIntegrado);
+  const planillaEnLista = (await operaciones['planilla:listar'](null, { busqueda: '2026-10' }))
+    .find(p => p.id === planillaIntegrada.id);
+  verificar('El resumen de planillas expone comisiones, viáticos y total a pagar',
+    !!planillaEnLista && planillaEnLista.total_comisiones === 1250
+      && planillaEnLista.total_viaticos === 1500 && planillaEnLista.total_a_pagar === 17250,
+    planillaEnLista);
+  verificar('Los movimientos quedan reservados, pero pendientes hasta pagar',
+    (await operaciones['planilla:movimientos_pendientes'](null, { periodo: '2026-10' })).comisiones.length === 0
+      && (await operaciones['comisiones:listar'](null, { periodo: '2026-10' }))[0].estado === 'PENDIENTE'
+      && (await operaciones['viaticos:listar'](null, { desde: '2026-10-01', hasta: '2026-10-31' }))[0].liquidado === 0);
+  await operaciones['planilla:pagar'](null, planillaIntegrada.id);
+  await operaciones['planilla:pagar'](null, planillaIntegrada.id);
+  detalleIntegrado = await operaciones['planilla:obtener'](null, planillaIntegrada.id);
+  verificar('Pagar la planilla liquida ambos movimientos sin duplicarlos',
+    detalleIntegrado.estado === 'PAGADA'
+      && (await operaciones['comisiones:listar'](null, { periodo: '2026-10' }))[0].estado === 'PAGADA'
+      && (await operaciones['viaticos:listar'](null, { desde: '2026-10-01', hasta: '2026-10-31' }))[0].liquidado === 1,
+    detalleIntegrado);
 
   console.log('\n7) Usuarios, autenticación y sesiones');
   const dbUsuarios = baseDatos.obtenerDB();
@@ -451,10 +572,10 @@ async function ejecutar() {
   verificar('La migración conserva los datos y calcula kilómetros',
     viajeMigrado && viajeMigrado.km_recorridos === 75, viajeMigrado);
   verificar('La base migrada queda en la versión vigente',
-    dbMigrada.pragma('user_version', { simple: true }) === 7,
+    dbMigrada.pragma('user_version', { simple: true }) === 9,
     dbMigrada.pragma('user_version', { simple: true }));
-  verificar('La migración crea la tabla de comisiones en bases anteriores',
-    dbMigrada.prepare("SELECT COUNT(*) total FROM sqlite_master WHERE type='table' AND name='comisiones'").get().total === 1);
+  verificar('La migración conserva comisiones y agrega la tabla de movimientos de planilla',
+    dbMigrada.prepare("SELECT COUNT(*) total FROM sqlite_master WHERE type='table' AND name IN ('comisiones','planilla_movimientos')").get().total === 2);
   baseDatos.cerrarBaseDatos();
   for (const sufijo of ['', '-wal', '-shm']) {
     const f = rutaAnterior + sufijo;

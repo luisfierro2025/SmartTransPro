@@ -15,7 +15,7 @@ const { inicializarBaseDatos, cerrarBaseDatos, cargarDatosEjemplo } = require(pa
 const { registrarIPC } = require(path.join(raiz, 'src', 'main', 'ipc'));
 
 const modulos = [
-  'dashboard', 'bitacora', 'flota', 'clientes', 'planilla',
+  'escritorio', 'dashboard', 'bitacora', 'flota', 'clientes', 'planilla',
   'ingresos', 'egresos', 'reportes', 'usuarios', 'configuracion'
 ];
 const errores = [];
@@ -54,7 +54,20 @@ const ESTADO_SESION = `(async () => {
     instalacionVisible: !document.getElementById('instalacionPantalla').hidden,
     usuario: document.getElementById('sidebarUsuarioNombre').textContent.trim(),
     avatar: document.getElementById('sidebarAvatar').textContent.trim(),
-    empresa: document.getElementById('empresaDestacada').textContent.trim()
+    empresa: document.getElementById('empresaDestacada').textContent.trim(),
+    modulo: document.querySelector('.menu-item.active')?.dataset.module,
+    marcaEscritorio: document.querySelector('.escritorio-marca span')?.textContent.trim(),
+    preferenciaEscritorio: localStorage.getItem('control-empresa-texto-escritorio'),
+    cuadriculaEscritorio: getComputedStyle(document.getElementById('content')).backgroundImage.includes('linear-gradient'),
+    tamanoMarcaEscritorio: parseFloat(getComputedStyle(document.querySelector('.escritorio-marca span')).fontSize),
+    soloTextoEscritorio: !document.querySelector('.escritorio-marca svg,.escritorio-marca img'),
+    movimientoReducido: matchMedia('(prefers-reduced-motion: reduce)').matches,
+    animacionEscritorio: {
+      nombre: getComputedStyle(document.querySelector('.escritorio-marca span')).animationName,
+      duracion: getComputedStyle(document.querySelector('.escritorio-marca span')).animationDuration,
+      espera: getComputedStyle(document.querySelector('.escritorio-marca span')).animationDelay,
+      repeticiones: getComputedStyle(document.querySelector('.escritorio-marca span')).animationIterationCount
+    }
   };
 })()`;
 
@@ -136,6 +149,47 @@ async function ejecutar() {
   // 3) Instalación correcta: crea la cuenta con la clave elegida y entra.
   await ventana.webContents.executeJavaScript(INSTALAR);
   const sesion = await ventana.webContents.executeJavaScript(ESTADO_SESION);
+  if (sesion.movimientoReducido ? sesion.animacionEscritorio.nombre !== 'none' :
+      sesion.animacionEscritorio.nombre !== 'escritorio-animaciones' || sesion.animacionEscritorio.duracion !== '10s' ||
+      sesion.animacionEscritorio.espera !== '5s' || sesion.animacionEscritorio.repeticiones !== 'infinite') {
+    errores.push(`La animación del Escritorio no respeta el intervalo o la preferencia de movimiento: ${JSON.stringify(sesion.animacionEscritorio)}`);
+  }
+  if (!sesion.movimientoReducido && sesion.animacionEscritorio.nombre === 'escritorio-animaciones') {
+    const movimientos = await ventana.webContents.executeJavaScript(`(() => {
+      const texto = document.querySelector('.escritorio-marca span');
+      const animacion = texto.getAnimations()[0];
+      const tiempo = animacion.currentTime;
+      animacion.pause();
+      const posicion = tiempo => {
+        animacion.currentTime = tiempo;
+        const matriz = new DOMMatrix(getComputedStyle(texto).transform);
+        return { x: matriz.m41, y: matriz.m42 };
+      };
+      const resultado = { pulso: posicion(5500), derecha: posicion(10500), izquierda: posicion(12500) };
+      animacion.currentTime = tiempo;
+      animacion.play();
+      return resultado;
+    })()`);
+    if (movimientos.pulso.y >= 0 || movimientos.derecha.x <= 0 || movimientos.izquierda.x >= 0) {
+      errores.push(`El Escritorio no alterna el pulso con la marquesina: ${JSON.stringify(movimientos)}`);
+    }
+  }
+  const depurador = ventana.webContents.debugger;
+  depurador.attach('1.3');
+  try {
+    await depurador.sendCommand('Emulation.setEmulatedMedia', {
+      features: [{ name: 'prefers-reduced-motion', value: 'reduce' }]
+    });
+    const animacionReducida = await ventana.webContents.executeJavaScript(
+      `getComputedStyle(document.querySelector('.escritorio-marca span')).animationName`
+    );
+    if (animacionReducida !== 'none') {
+      errores.push(`El texto del Escritorio se anima con movimiento reducido: ${animacionReducida}`);
+    }
+  } finally {
+    await depurador.sendCommand('Emulation.setEmulatedMedia', { features: [] });
+    depurador.detach();
+  }
   if (sesion.loginVisible || sesion.instalacionVisible) {
     errores.push('El sistema no entra tras completar la instalación.');
   }
@@ -145,6 +199,11 @@ async function ejecutar() {
   if (!sesion.avatar) errores.push('El avatar del sidebar quedó vacío tras instalar.');
   if (sesion.empresa !== 'Transportes Prueba') {
     errores.push(`La empresa escrita en la instalación no se guardó: "${sesion.empresa}"`);
+  }
+  if (sesion.modulo !== 'escritorio'
+    || sesion.marcaEscritorio !== (sesion.preferenciaEscritorio||'Transporte Fierro')
+    || !sesion.cuadriculaEscritorio || sesion.tamanoMarcaEscritorio < 48 || !sesion.soloTextoEscritorio) {
+    errores.push(`El acceso inicial no abre el Escritorio con la marca de agua: ${JSON.stringify(sesion)}`);
   }
 
   // 4) Cerrar sesión pide confirmación en un diálogo de la aplicación (ya no
@@ -239,8 +298,54 @@ async function ejecutar() {
   await ventana.webContents.executeJavaScript(INICIAR_SESION);
   const trasEntrar = await ventana.webContents.executeJavaScript(ESTADO_SESION);
   if (trasEntrar.loginVisible) errores.push('No se pudo entrar con la cuenta creada en la instalación.');
+  if (trasEntrar.modulo !== 'escritorio'
+    || trasEntrar.marcaEscritorio !== (trasEntrar.preferenciaEscritorio||'Transporte Fierro')
+    || !trasEntrar.cuadriculaEscritorio || trasEntrar.tamanoMarcaEscritorio < 48 || !trasEntrar.soloTextoEscritorio) {
+    errores.push(`El login no abre el Escritorio con la marca de agua: ${JSON.stringify(trasEntrar)}`);
+  }
   await esperar(400);
 
+  const sidebarPlegado = await ventana.webContents.executeJavaScript(`(() => {
+    const boton = document.getElementById('sidebarToggle');
+    boton.click();
+    return {
+      plegado: document.querySelector('.app-shell').classList.contains('sidebar-collapsed'),
+      expandido: boton.getAttribute('aria-expanded'),
+      preferencia: localStorage.getItem('control-empresa-sidebar-colapsado')
+    };
+  })()`);
+  if (!sidebarPlegado.plegado || sidebarPlegado.expandido !== 'false' || sidebarPlegado.preferencia !== 'true') {
+    errores.push(`El menú lateral no se pliega o no guarda su preferencia: ${JSON.stringify(sidebarPlegado)}`);
+  }
+  const sidebarExpandido = await ventana.webContents.executeJavaScript(`(() => {
+    const boton = document.getElementById('sidebarToggle');
+    boton.click();
+    return {
+      plegado: document.querySelector('.app-shell').classList.contains('sidebar-collapsed'),
+      expandido: boton.getAttribute('aria-expanded'),
+      preferencia: localStorage.getItem('control-empresa-sidebar-colapsado')
+    };
+  })()`);
+  if (sidebarExpandido.plegado || sidebarExpandido.expandido !== 'true' || sidebarExpandido.preferencia !== 'false') {
+    errores.push(`El menú lateral no vuelve a expandirse correctamente: ${JSON.stringify(sidebarExpandido)}`);
+  }
+
+  let estiloTablaBitacora = null;
+  const filasEnLinea = {
+    flota: [
+      ['tabVehiculos', 'btnAgregarFilaVehiculo', 'tablaVehiculos'],
+      ['tabConductores', 'btnAgregarFilaConductor', 'tablaConductores'],
+      ['tabCombustible', 'btnAgregarFilaCombustible', 'tablaCombustible']
+    ],
+    clientes: [[null, 'btnAgregarFilaCliente', 'tablaClientes']],
+    planilla: [
+      ['tabEmpleados', 'btnAgregarFilaEmpleado', 'tablaEmpleados'],
+      ['tabViaticos', 'btnAgregarFilaViatico', 'tablaViaticos'],
+      ['tabComisiones', 'btnAgregarFilaComision', 'tablaComisiones']
+    ],
+    ingresos: [[null, 'btnAgregarFilaMov', 'tablaFinanciera']],
+    egresos: [[null, 'btnAgregarFilaMov', 'tablaFinanciera']]
+  };
   for (const modulo of modulos) {
     const antes = errores.length;
     await ventana.webContents.executeJavaScript(`
@@ -256,10 +361,145 @@ async function ejecutar() {
       cargando: /Cargando/.test(document.getElementById('content').innerText),
       error: /No se pudo cargar|Error al cargar/.test(document.getElementById('content').innerText)
     })`);
+    const resumenModulo = await ventana.webContents.executeJavaScript(`(() => {
+      actualizarTicker();
+      const activos = [...document.querySelectorAll('#content .card,#content .dash-kpi,#content .op-item,#content .dash-hero-kpi')]
+        .filter(el => !el.closest('[hidden],.tab-content:not(.active)'));
+      const etiquetas = activos.map(el =>
+        el.querySelector('.card-label,.dash-kpi-etiqueta,.op-etiqueta,.dash-hero-etiqueta')?.textContent.trim()
+      ).filter(Boolean);
+      const barra = document.getElementById('tickerTrack').innerText.toLowerCase();
+      const resumenOculto = ['.cards','.metrics-grid','.dash-kpis','.dash-panel--op']
+        .every(selector => [...document.querySelectorAll('#content ' + selector)]
+          .every(el => getComputedStyle(el).display === 'none'));
+      const utilidadVisible = [...document.querySelectorAll('#content .dash-hero-kpi')]
+        .some(el => getComputedStyle(el).display !== 'none' && el.innerText.trim().length > 0);
+      return {
+        faltantes: etiquetas.filter(etiqueta => !barra.includes(etiqueta.toLowerCase())),
+        resumenOculto,
+        utilidadVisible
+      };
+    })()`);
+    if (resumenModulo.faltantes.length) {
+      errores.push(`La barra inferior no contiene indicadores de ${modulo}: ${resumenModulo.faltantes.join(', ')}`);
+    }
+    if (!resumenModulo.resumenOculto) errores.push(`El módulo ${modulo} todavía muestra tarjetas de indicadores.`);
+    if (modulo === 'dashboard' && !resumenModulo.utilidadVisible) {
+      errores.push('El dashboard no muestra la utilidad del período y su variación.');
+    }
+    const estilosTabla = await ventana.webContents.executeJavaScript(`(() => {
+      const tablas = [...document.querySelectorAll('#content table:not(.ficha-datos):not(.importar-preview)')]
+        .filter(t => t.tHead?.rows[0]?.cells[0] && t.tBodies[0]?.rows[0]?.cells[0]);
+      const estilo = el => {
+        const s = getComputedStyle(el);
+        return { fuente:s.fontFamily, tamano:s.fontSize, altoLinea:s.lineHeight, relleno:s.padding };
+      };
+      return tablas.map(tabla => ({ cabecera:estilo(tabla.tHead.rows[0].cells[0]), celda:estilo(tabla.tBodies[0].rows[0].cells[0]) }));
+    })()`);
+    if (modulo === 'bitacora') estiloTablaBitacora = estilosTabla[0] || null;
+    else if (estiloTablaBitacora) {
+      for (const estiloTabla of estilosTabla) {
+        if (JSON.stringify(estiloTabla) !== JSON.stringify(estiloTablaBitacora)) {
+          errores.push(`Una tabla de ${modulo} no coincide con Bitácora: ${JSON.stringify(estiloTabla)}`);
+        }
+      }
+      for (const [tab, boton, contenedor] of filasEnLinea[modulo] || []) {
+        const resultado = await ventana.webContents.executeJavaScript(`
+          (async () => {
+            const esperar = () => new Promise(resolve => setTimeout(resolve, 400));
+            const [tab, boton, contenedor, modulo] = ${JSON.stringify([tab, boton, contenedor, modulo])};
+            if (tab) document.querySelector('.tab-btn[data-tab="' + tab + '"]').click();
+            await esperar();
+            const tabla = () => document.querySelector('#' + contenedor + ' table');
+            const cabeceras = [...tabla().tHead.rows[0].cells].map(th => th.textContent.trim());
+            const clave = 'control-empresa-columnas:' + JSON.stringify([modulo, contenedor, cabeceras]);
+            const anterior = localStorage.getItem(clave);
+            try {
+              const control = tabla().tHead.rows[0].cells[1].querySelector('.ajustar-columna');
+              for (let i = 0; i < 30; i++) control.dispatchEvent(new KeyboardEvent('keydown', { key:'ArrowLeft', bubbles:true }));
+              document.getElementById(boton).click();
+              await esperar();
+              const fila = tabla().querySelector('.bitacora-inline-row');
+              if (!fila) return { error:'No se abrió la fila de captura' };
+              const botonDestino = fila.querySelector('[data-accion="elegir-destino"]');
+              if (botonDestino) botonDestino.hidden = false;
+              const elementos = [...fila.querySelectorAll('input,select,button')].filter(el => el.getClientRects().length);
+              const centros = elementos.map(el => {
+                const rect = el.getBoundingClientRect();
+                return (rect.top + rect.bottom) / 2;
+              });
+              const cortados = elementos.filter(el => {
+                const rect = el.getBoundingClientRect(), celda = el.closest('td').getBoundingClientRect();
+                return rect.left < celda.left - 1 || rect.right > celda.right + 1;
+              }).map(el => el.getAttribute('aria-label') || el.textContent.trim());
+              const resultado = {
+                altura:fila.getBoundingClientRect().height,
+                alineados:Math.max(...centros) - Math.min(...centros) <= 2,
+                cortados
+              };
+              fila.querySelector('[data-accion="cancelar"]').click();
+              return resultado;
+            } finally {
+              if (anterior === null) localStorage.removeItem(clave);
+              else localStorage.setItem(clave, anterior);
+            }
+          })()`);
+        if (resultado.error || resultado.altura > 70 || !resultado.alineados || resultado.cortados.length) {
+          errores.push(`La fila de ${contenedor} no es compacta o muestra controles recortados: ${JSON.stringify(resultado)}`);
+        }
+      }
+    }
     // El módulo Bitácora debe poder abrir el modal "+ Registrar Viaje".
     // Se comprueba antes de contar los errores de consola para que una excepción
     // al construir el formulario también se reporte como fallo del módulo.
     if (modulo === 'bitacora') {
+      const tablaCompacta = await ventana.webContents.executeJavaScript(`
+        (async () => {
+          const esperar = () => new Promise(resolve => setTimeout(resolve, 300));
+          const tabla = () => document.querySelector('#contenedorTablaBitacora table');
+          const cabeceras = [...tabla().tHead.rows[0].cells].map(th => th.textContent.trim());
+          const clave = 'control-empresa-columnas:' + JSON.stringify(['bitacora', 'contenedorTablaBitacora', cabeceras]);
+          const anterior = localStorage.getItem(clave);
+          try {
+            localStorage.removeItem(clave);
+            document.getElementById('btnFiltrar').click();
+            await esperar();
+            const id = tabla().tHead.rows[0].cells[0].getBoundingClientRect().width;
+            const control = tabla().querySelector('.ajustar-columna');
+            const antes = control.parentElement.getBoundingClientRect().width;
+            control.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+            const ajustado = control.parentElement.getBoundingClientRect().width;
+            document.getElementById('btnFiltrar').click();
+            await esperar();
+            const restaurado = tabla().tHead.rows[0].cells[0].getBoundingClientRect().width;
+            document.getElementById('btnAgregarFilaViaje').click();
+            await esperar();
+            const fila = tabla().querySelector('.bitacora-inline-row');
+            const arriba = campo => fila.querySelector('[data-campo="' + campo + '"]').getBoundingClientRect().top;
+            const botones = [...fila.querySelectorAll('.bitacora-inline-actions button')].map(b => b.getBoundingClientRect().top);
+            const cortados = [...fila.querySelectorAll('input,select,button')].filter(el => el.getClientRects().length).filter(el => {
+              const rect = el.getBoundingClientRect(), celda = el.closest('td').getBoundingClientRect();
+              return rect.left < celda.left - 1 || rect.right > celda.right + 1;
+            }).map(el => el.getAttribute('aria-label') || el.textContent.trim());
+            const resultado = {
+              id, antes, ajustado, restaurado, alto: fila.getBoundingClientRect().height,
+              km: arriba('kmSalida') === arriba('kmLlegada'),
+              notas: arriba('carga') === arriba('observaciones'),
+              botones: botones[0] === botones[1], cortados
+            };
+            fila.querySelector('[data-accion="cancelar-fila"]').click();
+            return resultado;
+          } finally {
+            if (anterior === null) localStorage.removeItem(clave);
+            else localStorage.setItem(clave, anterior);
+          }
+        })()`);
+      if (tablaCompacta.id > 80 || Math.abs(tablaCompacta.ajustado - tablaCompacta.antes - 10) > 2 ||
+          Math.abs(tablaCompacta.restaurado - tablaCompacta.ajustado) > 2 || tablaCompacta.alto > 70 ||
+          !tablaCompacta.km || !tablaCompacta.notas || !tablaCompacta.botones || tablaCompacta.cortados.length) {
+        errores.push(`La tabla compacta o el ajuste de columnas de Bitácora fallaron: ${JSON.stringify(tablaCompacta)}`);
+      }
+
       const modal = await ventana.webContents.executeJavaScript(`
         (async () => {
           document.getElementById('btnNuevoViaje').click();
@@ -332,6 +572,86 @@ async function ejecutar() {
     // que el modal "+ Registrar Viático" abra y que "Liquidar" muestre la ficha de
     // pago (ya no el confirm()/alert del navegador).
     if (modulo === 'planilla') {
+      const fichaPlanilla = await ventana.webContents.executeJavaScript(`
+        (async () => {
+          const esperar = ms => new Promise(resolve => setTimeout(resolve, ms));
+          const hoy = new Date();
+          const fecha = [hoy.getFullYear(), String(hoy.getMonth() + 1).padStart(2, '0'), String(hoy.getDate()).padStart(2, '0')].join('-');
+          const periodo = fecha.slice(0, 7);
+          const sufijo = Date.now();
+          const conductor = await window.api.conductores.guardar({ nombre: 'Conductor UI ' + sufijo });
+          const empleado = await window.api.empleados.guardar({
+            nombre: 'Empleado UI ' + sufijo, cargo: 'Prueba', salario_base: 1000,
+            conductor_id: conductor.id, activo: 1
+          });
+          const comision = await window.api.comisiones.guardar({
+            conductor_id: conductor.id, fecha, periodo, concepto: 'Comisión UI editable',
+            tipo: 'PORCENTAJE', base_calculo: 1000, valor_calculo: 10
+          });
+          const viatico = await window.api.viaticos.guardar({
+            conductor_id: conductor.id, fecha, destino: 'Destino UI', motivo: 'Edición',
+            monto: 40, liquidado: 0
+          });
+          const planilla = await window.api.planilla.guardar({
+            periodo, fecha_pago: fecha, observacion: 'Planilla UI ' + sufijo, estado: 'BORRADOR',
+            detalle: [{ empleado_id: empleado.id, salario: 1000, horas_extra: 0, bonificaciones: 0, deducciones: 0 }]
+          });
+          document.querySelector('.tab-btn[data-tab="tabPlanillas"]').click();
+          document.getElementById('plaBuscar').value = 'Planilla UI ' + sufijo;
+          document.getElementById('btnFiltrarPla').click();
+          await esperar(500);
+          document.querySelector('#tablaPlanillas .btnEditarPla[data-id="' + planilla.id + '"]').click();
+          await esperar(700);
+          const ficha = document.querySelector('.planilla-ficha-modal');
+          const tarjetaEmpleado = ficha && ficha.querySelector('tr[data-empleado="' + empleado.id + '"]');
+          const entradaComision = tarjetaEmpleado && tarjetaEmpleado.querySelector('input[data-movimiento="' + comision.id + '"]');
+          const botonViaticos = tarjetaEmpleado && tarjetaEmpleado.querySelector('.btnVerViaticosPla');
+          if (botonViaticos) { botonViaticos.click(); await esperar(200); }
+          const entradaViatico = document.querySelector('.planilla-viatico-monto[data-viatico="' + viatico.id + '"]');
+          const ancho = ficha ? ficha.getBoundingClientRect().width : 0;
+          if (ficha) {
+            ficha.style.maxHeight = '240px';
+            ficha.scrollTop = 180;
+          }
+          await esperar(100);
+          const encabezado = ficha && ficha.querySelector('.modal-header');
+          const encabezadoFijo = !!(ficha && encabezado && Math.abs(encabezado.getBoundingClientRect().top - ficha.getBoundingClientRect().top) < 5);
+          if (entradaComision && entradaViatico) {
+            entradaComision.value = '125';
+            entradaComision.dispatchEvent(new Event('input', { bubbles: true }));
+            entradaViatico.value = '55';
+            entradaViatico.dispatchEvent(new Event('input', { bubbles: true }));
+            document.getElementById('formPlanilla').requestSubmit();
+            await esperar(700);
+          }
+          const comisionGuardada = (await window.api.comisiones.listar({ periodo })).find(c => c.id === comision.id);
+          const viaticoGuardado = (await window.api.viaticos.listar({ desde: fecha, hasta: fecha })).find(v => v.id === viatico.id);
+          const detalle = await window.api.planilla.obtener(planilla.id);
+          const filaPlanilla = detalle.detalle.find(f => String(f.empleado_id) === String(empleado.id));
+          const correcto = !!entradaComision && !!entradaViatico && ancho >= 800 && ancho <= 1000
+            && !!tarjetaEmpleado && encabezadoFijo
+            && comisionGuardada.monto === 125 && comisionGuardada.valor_calculo === 12.5
+            && viaticoGuardado.monto === 55 && !!filaPlanilla && filaPlanilla.comisiones === 125
+            && filaPlanilla.viaticos === 55 && filaPlanilla.neto === 1125;
+          await window.api.planilla.eliminar(planilla.id);
+          await window.api.comisiones.eliminar(comision.id);
+          await window.api.viaticos.eliminar(viatico.id);
+          await window.api.empleados.eliminar(empleado.id);
+          await window.api.conductores.eliminar(conductor.id);
+          return {
+            correcto, ancho, empleadoVisible: !!tarjetaEmpleado, encabezadoFijo, camposEditables: !!entradaComision && !!entradaViatico,
+            montoComision: comisionGuardada && comisionGuardada.monto,
+            calculoComision: comisionGuardada && comisionGuardada.valor_calculo,
+            montoViatico: viaticoGuardado && viaticoGuardado.monto,
+            totalPlanilla: detalle && detalle.total_a_pagar,
+            filaPlanilla: filaPlanilla && { empleado_id: filaPlanilla.empleado_id, comisiones: filaPlanilla.comisiones, viaticos: filaPlanilla.viaticos, neto: filaPlanilla.neto },
+            valoresFormulario: [entradaComision && entradaComision.value, entradaViatico && entradaViatico.value]
+          };
+        })()`);
+      if (!fichaPlanilla.correcto) {
+        errores.push(`La ficha de planilla no permitió editar movimientos originales ni mantuvo su encabezado: ${JSON.stringify(fichaPlanilla)}`);
+      }
+
       const viaticos = await ventana.webContents.executeJavaScript(`
         (async () => {
           document.querySelector('.tab-btn[data-tab="tabViaticos"]').click();
@@ -462,8 +782,91 @@ async function ejecutar() {
       if (!(pagos.pendienteDespues.includes('0.00') || pagos.pendienteDespues.includes('0,00'))) errores.push(`Quedó saldo pendiente tras pagar todo: ${pagos.pendienteDespues}`);
     }
 
+    if (modulo === 'configuracion') {
+      const empresaConfiguracion = await ventana.webContents.executeJavaScript(`(async () => {
+        const esperar = () => new Promise(resolve => setTimeout(resolve, 300));
+        const original = await window.api.configuracion.obtener();
+        try {
+          const nombre = document.getElementById('empresa');
+          const simbolo = document.getElementById('simbolo');
+          const bannerAntes = document.getElementById('cfgEmpresaActiva').textContent;
+          nombre.value = 'Empresa UI';
+          nombre.dispatchEvent(new Event('input', { bubbles:true }));
+          simbolo.value = 'US$';
+          simbolo.dispatchEvent(new Event('input', { bubbles:true }));
+          const previa = document.getElementById('cfgPrevMonto').textContent;
+          const logo = document.getElementById('logoPreview').getBoundingClientRect().width;
+          document.getElementById('guardar').click();
+          await esperar();
+          const guardado = await window.api.configuracion.obtener();
+          const bannerGuardado = document.getElementById('cfgEmpresaActiva').textContent;
+          document.querySelector('#dialogoSistema [data-accion="ok"]')?.click();
+          const navegacion = ['tabCfgApariencia','tabCfgBaseDatos','tabCfgAcerca','tabCfgEmpresa'].every(id => {
+            const boton = document.querySelector('.cfg-nav [data-tab="' + id + '"]');
+            boton.click();
+            return boton.getAttribute('aria-pressed') === 'true' &&
+              document.getElementById(id).classList.contains('active') &&
+              document.querySelectorAll('.cfg-nav [aria-pressed="true"]').length === 1;
+          });
+          return { bannerAntes, previa, logo, nombre:guardado.nombre_empresa, simbolo:guardado.simbolo, bannerGuardado, navegacion };
+        } finally {
+          await window.api.configuracion.guardar(original);
+        }
+      })()`);
+      if (!empresaConfiguracion.bannerAntes || empresaConfiguracion.previa !== 'US$ 12,345.67' ||
+          empresaConfiguracion.logo !== 82 || empresaConfiguracion.nombre !== 'Empresa UI' ||
+          empresaConfiguracion.simbolo !== 'US$' || empresaConfiguracion.bannerGuardado !== 'Empresa UI' ||
+          !empresaConfiguracion.navegacion) {
+        errores.push(`La configuración de empresa no funciona correctamente: ${JSON.stringify(empresaConfiguracion)}`);
+      }
+
+      const textoEscritorio = await ventana.webContents.executeJavaScript(`(async () => {
+        document.querySelector('.cfg-nav .tab-btn[data-tab="tabCfgApariencia"]').click();
+        const campo = document.getElementById('cfgTextoEscritorio');
+        const valorInicial = campo.value;
+        const valorOriginal = localStorage.getItem('control-empresa-texto-escritorio');
+        campo.value = 'Patio Norte';
+        campo.dispatchEvent(new Event('input', { bubbles: true }));
+        document.getElementById('guardarTextoEscritorio').click();
+        await new Promise(resolve => setTimeout(resolve, 150));
+        const guardado = localStorage.getItem('control-empresa-texto-escritorio');
+        const vistaPrevia = document.getElementById('cfgVistaTextoEscritorio').textContent.trim();
+        document.querySelector('#dialogoSistema [data-accion="ok"]')?.click();
+        await new Promise(resolve => setTimeout(resolve, 100));
+        const escritorioPersonalizado = (() => {
+          document.querySelector('.menu-item[data-module="escritorio"]').click();
+          return new Promise(resolve => setTimeout(() => resolve(
+            document.querySelector('#textoMarcaEscritorio')?.textContent.trim()
+          ), 150));
+        })();
+        const textoPersonalizado = await escritorioPersonalizado;
+        if (valorOriginal === null) localStorage.removeItem('control-empresa-texto-escritorio');
+        else localStorage.setItem('control-empresa-texto-escritorio', valorOriginal);
+        document.querySelector('.menu-item[data-module="escritorio"]').click();
+        await new Promise(resolve => setTimeout(resolve, 150));
+        return {
+          valorInicial,
+          valorOriginal,
+          guardado,
+          vistaPrevia,
+          textoPersonalizado,
+          escritorio: document.querySelector('#textoMarcaEscritorio')?.textContent.trim()
+        };
+      })()`);
+      if (textoEscritorio.valorInicial !== (textoEscritorio.valorOriginal||'Transporte Fierro')
+        || textoEscritorio.guardado !== 'Patio Norte'
+        || textoEscritorio.vistaPrevia !== 'Patio Norte'
+        || textoEscritorio.textoPersonalizado !== 'Patio Norte'
+        || textoEscritorio.escritorio !== (textoEscritorio.valorOriginal||'Transporte Fierro')) {
+        errores.push(`El texto personalizado del Escritorio no se guardó ni aplicó: ${JSON.stringify(textoEscritorio)}`);
+      }
+    }
+
     const nuevosErrores = errores.length - antes;
-    const ok = estado.contenido.length > 20 && !estado.cargando && !estado.error && nuevosErrores === 0;
+    const contenidoValido = modulo === 'escritorio'
+      ? estado.contenido.length > 0
+      : estado.contenido.length > 20;
+    const ok = contenidoValido && !estado.cargando && !estado.error && nuevosErrores === 0;
     console.log(`  ${ok ? '[OK]   ' : '[FALLO]'} ${modulo.padEnd(13)} ${estado.titulo}`);
     if (!ok) {
       console.log(`         ${JSON.stringify(estado)}`);
@@ -484,6 +887,20 @@ async function ejecutar() {
   if (estadoCaptura.titulo !== 'Dashboard' || estadoCaptura.menuActivo !== 'dashboard') {
     errores.push(`No se restauró Dashboard antes de la captura: ${JSON.stringify(estadoCaptura)}`);
   }
+  const resumenBarra = await ventana.webContents.executeJavaScript(`(() => {
+    actualizarTicker();
+    return {
+      texto: document.getElementById('tickerTrack').innerText,
+      tarjetasVisibles: [...document.querySelectorAll('#content .dash-kpis, #content .dash-panel--op')]
+        .some(el => getComputedStyle(el).display !== 'none')
+    };
+  })()`);
+  const resumenBarraTexto = resumenBarra.texto.toLowerCase();
+  if (!['ingresos', 'egresos', 'costos operativos', 'viajes del período']
+    .every(etiqueta => resumenBarraTexto.includes(etiqueta))) {
+    errores.push(`La barra inferior no contiene todos los indicadores del Dashboard: ${resumenBarra.texto}`);
+  }
+  if (resumenBarra.tarjetasVisibles) errores.push('El Dashboard todavía muestra tarjetas de indicadores.');
   await esperar(350);
   const imagen = await ventana.webContents.capturePage();
   fs.writeFileSync(captura, imagen.toPNG());

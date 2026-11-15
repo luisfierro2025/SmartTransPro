@@ -1347,6 +1347,63 @@ async function generarPdfDesdeHtml(_, { html, nombreSugerido } = {}) {
   }
 }
 
+async function imprimirHtmlDesdeElectron(evento, { html, landscape = false } = {}) {
+  if (!texto(html)) return { ok: false, mensaje: 'No hay contenido para imprimir.' };
+  const padre = evento && evento.sender ? BrowserWindow.fromWebContents(evento.sender) : null;
+  const opcionesVentana = {
+    show: false,
+    width: 1100,
+    height: 900,
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      backgroundThrottling: false
+    }
+  };
+  if (padre && !padre.isDestroyed()) opcionesVentana.parent = padre;
+
+  const documento = new BrowserWindow(opcionesVentana);
+  const rutaTemporal = path.join(os.tmpdir(), `impresion-smarttranspro-${process.pid}-${Date.now()}.html`);
+  const horizontal = landscape === true;
+  try {
+    await fsp.writeFile(rutaTemporal, html, 'utf8');
+    await documento.loadFile(rutaTemporal);
+    await documento.webContents.executeJavaScript(
+      "(async function(){if(document.fonts&&document.fonts.ready)await document.fonts.ready;await Promise.all(Array.from(document.images||[]).map(function(img){if(img.complete)return Promise.resolve();return new Promise(function(resolve){img.addEventListener('load',resolve,{once:true});img.addEventListener('error',resolve,{once:true});setTimeout(resolve,5000);});}));return true;})()"
+    );
+    documento.setSkipTaskbar(true);
+    documento.showInactive();
+
+    const resultado = await new Promise((resolve) => {
+      documento.webContents.print({
+        silent: false,
+        printBackground: true,
+        color: true,
+        landscape: horizontal,
+        pageSize: {
+          width: horizontal ? 279400 : 215900,
+          height: horizontal ? 215900 : 279400
+        },
+        margins: { marginType: 'none' }
+      }, (success, failureReason) => resolve({ success: Boolean(success), failureReason: failureReason || '' }));
+    });
+
+    if (resultado.success) return { ok: true, mensaje: 'Documento enviado a impresión.' };
+    const cancelado = /cancel/i.test(resultado.failureReason);
+    return {
+      ok: false,
+      cancelado,
+      mensaje: resultado.failureReason || (cancelado ? 'La impresión fue cancelada.' : 'No se pudo completar la impresión.')
+    };
+  } catch (error) {
+    return { ok: false, mensaje: error instanceof Error ? error.message : 'No se pudo preparar el documento para imprimir.' };
+  } finally {
+    try { if (!documento.isDestroyed()) documento.destroy(); } catch {}
+    fsp.unlink(rutaTemporal).catch(() => {});
+  }
+}
+
 // Convierte un "data:image/xxx;base64,..." a { extension, buffer }; null si no es válido.
 function decodificarImagenDataUrl(dataUrl) {
   const m = /^data:image\/([a-zA-Z0-9.+-]+);base64,(.+)$/.exec(String(dataUrl || ''));
@@ -1897,6 +1954,7 @@ const operaciones = {
   'sistema:auditoria': listarAuditoria,
   // Reportes en PDF y descarga de documentos/imágenes
   'reportes:pdf': generarPdfDesdeHtml,
+  'reportes:imprimir-html': imprimirHtmlDesdeElectron,
   'archivos:guardar_imagen': guardarImagenDataUrl,
   'archivos:guardar_imagenes': guardarImagenesEnCarpeta
 };

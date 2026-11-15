@@ -11,7 +11,7 @@ const fs = require('fs');
 let db = null;
 
 const NOMBRE_ARCHIVO = 'control-empresa.db';
-const VERSION_ESQUEMA = 7;
+const VERSION_ESQUEMA = 9;
 
 // Permite mover la base de datos a otra ubicación (respaldos, red o pruebas).
 function obtenerRutaBaseDatos() {
@@ -75,6 +75,7 @@ CREATE TABLE IF NOT EXISTS empleados(
   cedula TEXT,
   cargo TEXT,
   salario_base REAL NOT NULL DEFAULT 0,
+  conductor_id INTEGER REFERENCES conductores(id) ON DELETE SET NULL,
   fecha_ingreso TEXT,
   activo INTEGER NOT NULL DEFAULT 1,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -89,6 +90,8 @@ CREATE TABLE IF NOT EXISTS planillas(
   total_bruto REAL NOT NULL DEFAULT 0,
   total_deducciones REAL NOT NULL DEFAULT 0,
   total_neto REAL NOT NULL DEFAULT 0,
+  total_viaticos REAL NOT NULL DEFAULT 0,
+  total_a_pagar REAL NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -99,6 +102,8 @@ CREATE TABLE IF NOT EXISTS planilla_detalle(
   salario REAL NOT NULL DEFAULT 0,
   horas_extra REAL NOT NULL DEFAULT 0,
   bonificaciones REAL NOT NULL DEFAULT 0,
+  comisiones REAL NOT NULL DEFAULT 0,
+  viaticos REAL NOT NULL DEFAULT 0,
   deducciones REAL NOT NULL DEFAULT 0,
   neto REAL NOT NULL DEFAULT 0,
   FOREIGN KEY(planilla_id) REFERENCES planillas(id) ON DELETE CASCADE,
@@ -142,6 +147,30 @@ CREATE TABLE IF NOT EXISTS comisiones(
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY(conductor_id) REFERENCES conductores(id),
   FOREIGN KEY(viaje_id) REFERENCES bitacora_viajes(id)
+);
+
+CREATE TABLE IF NOT EXISTS tarifas_destino(
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  origen TEXT NOT NULL,
+  destino TEXT NOT NULL,
+  valor REAL NOT NULL DEFAULT 0,
+  activo INTEGER NOT NULL DEFAULT 1,
+  observacion TEXT,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_tarifas_destino_ruta ON tarifas_destino(lower(origen), lower(destino));
+
+CREATE TABLE IF NOT EXISTS planilla_movimientos(
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  planilla_id INTEGER NOT NULL,
+  empleado_id INTEGER NOT NULL,
+  tipo TEXT NOT NULL CHECK(tipo IN ('COMISION', 'VIATICO')),
+  movimiento_id INTEGER NOT NULL,
+  monto REAL NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY(planilla_id) REFERENCES planillas(id) ON DELETE CASCADE,
+  FOREIGN KEY(empleado_id) REFERENCES empleados(id),
+  UNIQUE(tipo, movimiento_id)
 );
 
 -- Finanzas
@@ -304,9 +333,11 @@ INSERT OR IGNORE INTO configuracion(id) VALUES(1);
 // Se ejecutan después de crear/migrar el esquema, nunca dentro de ESQUEMA.
 const INDICES = `
 CREATE INDEX IF NOT EXISTS idx_empleados_nombre ON empleados(nombre);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_empleados_conductor_unico ON empleados(conductor_id);
 CREATE INDEX IF NOT EXISTS idx_planillas_periodo ON planillas(periodo);
 CREATE INDEX IF NOT EXISTS idx_planilla_detalle_planilla ON planilla_detalle(planilla_id);
 CREATE INDEX IF NOT EXISTS idx_planilla_detalle_empleado ON planilla_detalle(empleado_id);
+CREATE INDEX IF NOT EXISTS idx_planilla_movimientos_planilla ON planilla_movimientos(planilla_id);
 CREATE INDEX IF NOT EXISTS idx_viaticos_fecha ON viaticos(fecha);
 CREATE INDEX IF NOT EXISTS idx_viaticos_empleado ON viaticos(empleado_id);
 CREATE INDEX IF NOT EXISTS idx_comisiones_fecha ON comisiones(fecha);
@@ -343,8 +374,14 @@ function asegurarColumna(tabla, columna, definicion) {
 function aplicarMigraciones() {
   asegurarColumna('empleados', 'cedula', 'TEXT');
   asegurarColumna('empleados', 'fecha_ingreso', 'TEXT');
+  asegurarColumna('empleados', 'conductor_id', 'INTEGER REFERENCES conductores(id) ON DELETE SET NULL');
   asegurarColumna('ingresos', 'cliente_id', 'INTEGER REFERENCES clientes(id)');
   asegurarColumna('planillas', 'estado', "TEXT NOT NULL DEFAULT 'BORRADOR'");
+  asegurarColumna('planillas', 'total_viaticos', 'REAL NOT NULL DEFAULT 0');
+  asegurarColumna('planillas', 'total_a_pagar', 'REAL NOT NULL DEFAULT 0');
+  asegurarColumna('planilla_detalle', 'comisiones', 'REAL NOT NULL DEFAULT 0');
+  asegurarColumna('planilla_detalle', 'viaticos', 'REAL NOT NULL DEFAULT 0');
+  db.prepare('UPDATE planillas SET total_a_pagar=total_neto+total_viaticos WHERE total_a_pagar=0').run();
   asegurarColumna('bitacora_viajes', 'cliente_id', 'INTEGER REFERENCES clientes(id)');
   asegurarColumna(
     'bitacora_viajes',
@@ -397,6 +434,8 @@ function aplicarMigraciones() {
   db.exec(`
     CREATE INDEX IF NOT EXISTS idx_viaticos_conductor ON viaticos(conductor_id);
     CREATE INDEX IF NOT EXISTS idx_viaticos_viaje ON viaticos(viaje_id);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_empleados_conductor_unico ON empleados(conductor_id);
+    CREATE INDEX IF NOT EXISTS idx_planilla_movimientos_planilla ON planilla_movimientos(planilla_id);
   `);
   asegurarViajeUnicoPorViatico();
   db.pragma(`user_version = ${VERSION_ESQUEMA}`);
@@ -617,7 +656,7 @@ function cargarDatosEjemplo() {
 // Borra la información almacenada. alcance: 'operativo' (movimientos) o 'total' (todo).
 function limpiarDatos(alcance) {
   const base = obtenerDB();
-  const operativas = ['planilla_detalle', 'planillas', 'viaticos', 'comisiones', 'ingresos', 'egresos', 'combustible', 'bitacora_viajes', 'movimientos_auditoria'];
+  const operativas = ['planilla_movimientos', 'planilla_detalle', 'planillas', 'viaticos', 'comisiones', 'ingresos', 'egresos', 'combustible', 'bitacora_viajes', 'movimientos_auditoria'];
   const catalogos = ['clientes', 'vehiculos', 'conductores', 'empleados'];
   // El historial GPS es operativo; los teléfonos vinculados solo se borran en la limpieza total.
   operativas.push('posiciones_gps');

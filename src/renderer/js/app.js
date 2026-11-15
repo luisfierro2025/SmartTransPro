@@ -1,6 +1,9 @@
 const content=document.getElementById('content'),pageTitle=document.getElementById('page-title');
 const money=new Intl.NumberFormat('es-NI',{minimumFractionDigits:2,maximumFractionDigits:2});
 const CLAVE_PERIODO_DASHBOARD='control-empresa-dashboard-periodo';
+const CLAVE_TEXTO_ESCRITORIO='control-empresa-texto-escritorio';
+const CLAVE_COLOR_FONDO_APLICACION='control-empresa-color-fondo';
+const TEXTO_ESCRITORIO_DEFAULT='Transporte Fierro';
 const PERIODOS_DASHBOARD=['mes-actual','mes-anterior','ultimos-3-meses','ultimos-6-meses','anio-actual','historico'];
 let periodoDashboard=PERIODOS_DASHBOARD.includes(localStorage.getItem(CLAVE_PERIODO_DASHBOARD))
   ? localStorage.getItem(CLAVE_PERIODO_DASHBOARD)
@@ -25,12 +28,59 @@ function aplicarTema(){
   aplicarPreferenciasInterfaz();
   const tema=localStorage.getItem('control-empresa-tema')||'light';
   document.body.classList.toggle('dark-theme',tema==='dark');
+  aplicarColorFondoAplicacion();
+  actualizarControlColorFondo();
   const btn=document.getElementById('themeToggle');
   if(btn){
     btn.textContent=tema==='dark'?'☀':'◐';
     btn.title=tema==='dark'?'Cambiar a tema claro':'Cambiar a tema oscuro';
     btn.setAttribute('aria-label',btn.title);
   }
+}
+
+function colorHexValido(color){
+  return /^#[0-9a-f]{6}$/i.test(color||'');
+}
+
+function colorTextoContraste(color){
+  const canales=color.slice(1).match(/.{2}/g).map(x=>parseInt(x,16)/255);
+  const luminancia=canales.map(x=>x<=.04045?x/12.92:((x+.055)/1.055)**2.4)
+    .reduce((suma,x,indice)=>suma+x*[.2126,.7152,.0722][indice],0);
+  if(luminancia<=.183) return '#fff';
+  if(luminancia<.265) return '#000';
+  return '#101828';
+}
+
+function actualizarControlColorFondo(){
+  const campo=document.getElementById('cfgColorFondoAplicacion');
+  if(!campo) return;
+  const guardado=localStorage.getItem(CLAVE_COLOR_FONDO_APLICACION);
+  campo.value=colorHexValido(guardado)
+    ? guardado
+    : document.body.classList.contains('dark-theme')?'#18232d':'#edf2f6';
+  const valor=document.getElementById('cfgColorFondoValor');
+  if(valor) valor.textContent=campo.value.toUpperCase();
+}
+
+function aplicarColorFondoAplicacion(){
+  const color=localStorage.getItem(CLAVE_COLOR_FONDO_APLICACION);
+  if(colorHexValido(color)){
+    document.body.style.setProperty('--bg',color);
+    document.body.style.setProperty('--app-bg-foreground',colorTextoContraste(color));
+  }else{
+    document.body.style.removeProperty('--bg');
+    document.body.style.removeProperty('--app-bg-foreground');
+  }
+}
+
+function aplicarSidebarColapsado(colapsado){
+  const boton=document.getElementById('sidebarToggle');
+  document.querySelector('.app-shell')?.classList.toggle('sidebar-collapsed',colapsado);
+  if(!boton) return;
+  const accion=colapsado?'Expandir':'Plegar';
+  boton.setAttribute('aria-expanded',String(!colapsado));
+  boton.setAttribute('aria-label',`${accion} menú lateral`);
+  boton.title=`${accion} menú lateral`;
 }
 
 function iniciarRelojEstado(){
@@ -47,9 +97,41 @@ function actualizarTicker(){
   const t=id=>(document.getElementById(id)?.textContent||'').trim(),esc=v=>String(v).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
   const usr=t('sidebarUsuarioNombre'),rol=t('sidebarUsuarioRol'),bd=t('db-status').replace(/^Base de datos:?\s*/i,'');
   const fecha=new Intl.DateTimeFormat('es-NI',{weekday:'long',day:'numeric',month:'long',year:'numeric'}).format(new Date());
-  const items=[['Empresa',t('empresaDestacada')],['Usuario',usr&&usr!=='Sin sesión'?(rol?`${usr} · ${rol}`:usr):''],['Módulo activo',t('status-module')],['Base de datos',bd],['Hoy',fecha],['Consejo','Los buscadores filtran mientras escribe'],['Consejo','Imprima lo filtrado desde la barra de herramientas de cada módulo']].filter(i=>i[1]);
+  const categoriaTicker=(nombre,valor)=>{
+    const etiqueta=nombre.toLowerCase(),dato=valor.toLowerCase();
+    if(/base de datos/.test(etiqueta)) return /sin conexi[oó]n|error|desconect/.test(dato)?'negativo':'positivo';
+    if(/egresos|gastos|vi[aá]ticos|deducciones|p[eé]rdida/.test(etiqueta)) return 'negativo';
+    if(/utilidad|ingresos|margen|ventas/.test(etiqueta)){
+      return /(?:^|\s)-\s*(?:c\$|\$)?\s*\d|▼|\bbaja\b/i.test(valor)?'negativo':'positivo';
+    }
+    if(/planilla|comisi[oó]n|flota|viaje|cliente/.test(etiqueta)) return 'operativo';
+    if(/usuario|empresa|m[oó]dulo|hoy/.test(etiqueta)) return 'marca';
+    return 'neutro';
+  };
+  const resumenes=[...content.querySelectorAll('.card,.dash-kpi,.op-item,.dash-hero-kpi')]
+    .filter(x=>!x.closest('[hidden],.tab-content:not(.active)'))
+    .map(x=>{
+      const etiqueta=x.querySelector('.card-label,.dash-kpi-etiqueta,.op-etiqueta,.dash-hero-etiqueta');
+      const valor=x.querySelector('.card-value,.dash-kpi-valor,.op-valor,.dash-hero-valor,.kpi-principal-valor');
+      if(!etiqueta||!valor) return null;
+      const nombre=etiqueta.textContent.trim().replace(/\s+/g,' ');
+      const monto=valor.textContent.trim().replace(/\s+/g,' ');
+      if(!nombre||!monto||monto==='-'||monto==='—') return null;
+      const notas=[...x.querySelectorAll('.dash-kpi-pie,.dash-hero-nota,.dash-hero-variacion')]
+        .map(n=>n.textContent.trim().replace(/\s+/g,' ')).filter(Boolean);
+      return [nombre,notas.length?`${monto} · ${notas.join(' · ')}`:monto];
+    })
+    .filter(Boolean);
+  const items=[
+    ['Empresa',t('empresaDestacada')],
+    ['Usuario',usr&&usr!=='Sin sesión'?(rol?`${usr} · ${rol}`:usr):''],
+    ['Módulo activo',t('status-module')],
+    ['Base de datos',bd],
+    ...resumenes,
+    ['Hoy',fecha]
+  ].filter(i=>i[1]);
   const firma=JSON.stringify(items); if(pista.dataset.firma===firma) return; pista.dataset.firma=firma;
-  const grupo=items.map(([k,v])=>`<span class="ticker-item"><b>${esc(k)}</b><span>${esc(v)}</span></span>`).join('');
+  const grupo=items.map(([k,v])=>`<span class="ticker-item ticker-item--${categoriaTicker(k,v)}"><b>${esc(k)}</b><span>${esc(v)}</span></span>`).join('');
   pista.innerHTML=`<div class="ticker-grupo">${grupo}</div><div class="ticker-grupo" aria-hidden="true">${grupo}</div>`;
   pista.style.setProperty('--ticker-dur',`${Math.max(25,Math.round(pista.firstElementChild.offsetWidth/55))}s`);
 }
@@ -60,6 +142,13 @@ function inicializarInterfaz(){
     const siguiente=document.body.classList.contains('dark-theme')?'light':'dark';
     localStorage.setItem('control-empresa-tema',siguiente);
     aplicarTema();
+  });
+  const sidebarColapsado=localStorage.getItem('control-empresa-sidebar-colapsado')==='true';
+  aplicarSidebarColapsado(sidebarColapsado);
+  document.getElementById('sidebarToggle')?.addEventListener('click',()=>{
+    const colapsado=!document.querySelector('.app-shell')?.classList.contains('sidebar-collapsed');
+    localStorage.setItem('control-empresa-sidebar-colapsado',String(colapsado));
+    aplicarSidebarColapsado(colapsado);
   });
   // Con el menú compacto, cada botón se identifica con un tooltip.
   document.querySelectorAll('.menu-item').forEach(b=>{
@@ -162,6 +251,7 @@ async function aplicarConfiguracionEmpresa(){
 }
 
 const modulos={
+  escritorio:['Escritorio',renderEscritorio],
   dashboard:['Dashboard',renderDashboard],
   bitacora:['Bitácora de Viajes y Rutas',renderBitacora],
   flota:['Control de Flota y Conductores',renderFlota],
@@ -191,6 +281,7 @@ async function abrir(n){
   const m=modulos[n]||modulos.dashboard;
   pageTitle.textContent=m[0];
   actualizarBarraEstado(m[0]);
+  content.classList.toggle('content-escritorio',n==='escritorio');
   // Cada cambio de módulo inicia en la parte superior del área de trabajo.
   // El menú, el encabezado y la barra de estado permanecen fijos.
   if(content) content.scrollTop=0;
@@ -198,6 +289,17 @@ async function abrir(n){
   // Activa búsqueda inteligente (filtra mientras se escribe) e impresión
   // de lo filtrado en todas las barras de herramientas del módulo recién dibujado.
   activarBusquedaInteligenteYImpresion(content);
+}
+
+function renderEscritorio(){
+  content.innerHTML=`
+    <div class="escritorio-vacio" role="region" aria-label="Escritorio de SmartTransPro">
+      <div class="escritorio-marca" aria-hidden="true">
+        <span id="textoMarcaEscritorio"></span>
+      </div>
+    </div>`;
+  content.querySelector('#textoMarcaEscritorio').textContent=
+    localStorage.getItem(CLAVE_TEXTO_ESCRITORIO)||TEXTO_ESCRITORIO_DEFAULT;
 }
 
 // Etiqueta corta de un mes "AAAA-MM" para las barras del gráfico.
@@ -627,7 +729,7 @@ async function renderBitacora(){
     </div>
 
     <div class="panel">
-      <div class="toolbar" style="align-items:flex-end; flex-wrap:wrap;">
+      <div class="toolbar bitacora-filtros">
         <div class="field">
           <label>Buscar</label>
           <input id="filtroBuscar" type="search" placeholder="Ruta, cliente, conductor, placa...">
@@ -767,12 +869,14 @@ async function renderBitacora(){
           </select>
         </td>
         <td>
-          <select class="bitacora-inline-control" data-campo="cliente" aria-label="Cliente">
-            <option value="">Sin cliente</option>
-            ${clientes.map(c => `<option value="${esc(c.id)}" data-nombre="${esc(c.nombre || '')}">${esc(c.nombre || '')}</option>`).join('')}
-            <option value="OTRO">Otro / manual</option>
-          </select>
-          <input class="bitacora-inline-control bitacora-inline-manual" data-campo="clienteManual" aria-label="Nombre del cliente" type="text" placeholder="Nombre del cliente" hidden>
+          <div class="bitacora-inline-group bitacora-inline-group--compact">
+            <select class="bitacora-inline-control" data-campo="cliente" aria-label="Cliente">
+              <option value="">Sin cliente</option>
+              ${clientes.map(c => `<option value="${esc(c.id)}" data-nombre="${esc(c.nombre || '')}">${esc(c.nombre || '')}</option>`).join('')}
+              <option value="OTRO">Otro / manual</option>
+            </select>
+            <input class="bitacora-inline-control bitacora-inline-manual" data-campo="clienteManual" aria-label="Nombre del cliente" type="text" placeholder="Nombre del cliente" hidden>
+          </div>
         </td>
         <td><input class="bitacora-inline-control" data-campo="modulo" aria-label="Módulo" type="text" placeholder="Módulo"></td>
         <td><input class="bitacora-inline-control" data-campo="horaSalida" aria-label="Hora de salida" type="time" value="${new Date().toTimeString().slice(0,5)}"></td>
@@ -782,8 +886,10 @@ async function renderBitacora(){
         <td><input class="bitacora-inline-control" data-campo="horaSalidaDestino" aria-label="Hora de salida del destino" type="time"></td>
         <td><input class="bitacora-inline-control" data-campo="horaRetorno" aria-label="Hora de retorno" type="time"></td>
         <td>
-          <input class="bitacora-inline-control" data-campo="kmSalida" aria-label="Kilómetros de salida" type="number" min="0" step="0.1" placeholder="Salida" value="0">
-          <input class="bitacora-inline-control" data-campo="kmLlegada" aria-label="Kilómetros de llegada" type="number" min="0" step="0.1" placeholder="Llegada" value="0">
+          <div class="bitacora-inline-group bitacora-inline-group--compact">
+            <input class="bitacora-inline-control" data-campo="kmSalida" aria-label="Kilómetros de salida" type="number" min="0" step="0.1" placeholder="Salida" value="0">
+            <input class="bitacora-inline-control" data-campo="kmLlegada" aria-label="Kilómetros de llegada" type="number" min="0" step="0.1" placeholder="Llegada" value="0">
+          </div>
         </td>
         <td><input class="bitacora-inline-control" data-campo="viatico" aria-label="Viático" type="number" min="0" step="0.01" value="0"></td>
         <td><input class="bitacora-inline-control" data-campo="estadia" aria-label="Estadía" type="number" min="0" step="0.01" value="0"></td>
@@ -796,8 +902,10 @@ async function renderBitacora(){
           </select>
         </td>
         <td>
-          <input class="bitacora-inline-control bitacora-inline-wide" data-campo="carga" aria-label="Descripción de carga" type="text" placeholder="Carga (opcional)">
-          <input class="bitacora-inline-control bitacora-inline-wide" data-campo="observaciones" aria-label="Nota u observaciones" type="text" placeholder="Nota (opcional)">
+          <div class="bitacora-inline-group">
+            <input class="bitacora-inline-control bitacora-inline-wide" data-campo="carga" aria-label="Descripción de carga" type="text" placeholder="Carga (opcional)">
+            <input class="bitacora-inline-control bitacora-inline-wide" data-campo="observaciones" aria-label="Nota u observaciones" type="text" placeholder="Nota (opcional)">
+          </div>
         </td>
         <td>
           <div class="bitacora-inline-actions">
@@ -828,7 +936,7 @@ async function renderBitacora(){
         <table style="min-width:1300px; font-size:12px;">
           <thead>
             <tr>
-              <th style="width:45px">ID</th>
+              <th style="width:75px">ID</th>
               <th>FECHA</th>
               <th>UNIDAD</th>
               <th>CONDUCTOR</th>
@@ -870,7 +978,7 @@ async function renderBitacora(){
                 <tr>
                   <td><strong>#${esc(v.id)}</strong></td>
                   <td><strong>${esc(formatearFecha(v.fecha))}</strong></td>
-                  <td><strong>${esc(unidadTxt)}</strong>${v.vehiculo_marca ? `<br><small style="color:var(--muted)">${esc(v.vehiculo_marca)}</small>` : ''}</td>
+                  <td><strong>${esc(unidadTxt)}</strong>${v.vehiculo_marca ? ` <small style="color:var(--muted)">· ${esc(v.vehiculo_marca)}</small>` : ''}</td>
                   <td>${condTxt}</td>
                   <td><strong>${cliTxt}</strong></td>
                   <td>${v.modulo ? `<span class="badge badge-neutral">${esc(v.modulo)}</span>` : '-'}</td>
@@ -882,13 +990,13 @@ async function renderBitacora(){
                   <td>${esc(v.hora_retorno || '-')}</td>
                   <td>
                     <small>${Number(v.km_salida||0).toLocaleString()} &rarr; ${Number(v.km_llegada||0) > 0 ? Number(v.km_llegada).toLocaleString() : 'Pend.'}</small>
-                    ${kmRec > 0 ? `<br><strong style="color:var(--primary); font-size:11px;">${kmRec.toLocaleString()} km</strong>` : ''}
+                    ${kmRec > 0 ? ` <strong style="color:var(--primary); font-size:11px;">· ${kmRec.toLocaleString()} km</strong>` : ''}
                   </td>
                   <td style="text-align:right">${formatoMonto(v.viatico || 0)}</td>
                   <td style="text-align:right">${formatoMonto(v.estadia || 0)}</td>
                   <td style="text-align:right">${formatoMonto(v.esteli || 0)}</td>
                   <td><span class="badge ${badgeClass}">${esc(v.estado || '')}</span></td>
-                  <td>${notaTxt ? `<small style="color:var(--muted); max-width:160px; display:inline-block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${notaEsc}">${notaEsc}</small>` : '<span style="color:var(--muted)">-</span>'}</td>
+                  <td>${notaTxt ? `<small style="color:var(--muted)" title="${notaEsc}">${notaEsc}</small>` : '<span style="color:var(--muted)">-</span>'}</td>
                   <td style="text-align:right">
                     <div class="action-buttons" style="justify-content:flex-end; gap:4px;">
                       <button class="btn btn-sm btn-secondary btnDocsViaje" data-id="${esc(v.id)}" type="button">Documentos (${[1, 2, 3].filter(n => v[`documento_viaje_${n}`]).length}/3)</button>
@@ -1798,41 +1906,54 @@ async function renderReportes(){
 async function renderConfiguracion(){
   const icono=(d)=>`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
   content.innerHTML=`
+    <header class="page-intro cfg-encabezado">
+      <span class="cfg-icono-principal" aria-hidden="true">${icono('<circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/><path d="M12 2v2m0 16v2M4.9 4.9l1.4 1.4m11.4 11.4 1.4 1.4M2 12h2m16 0h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>')}</span>
+      <div class="cfg-encabezado-texto">
+        <h2>Configuración</h2>
+        <p>Parámetros generales y administrativos del sistema.</p>
+      </div>
+    </header>
+    <div class="cfg-empresa-activa">
+      <span class="cfg-icono-principal" aria-hidden="true">${icono('<path d="M3 21h18"/><path d="M5 21V7l7-4 7 4v14"/><path d="M9 21v-6h6v6"/>')}</span>
+      <div><span>EMPRESA CONFIGURADA</span><strong id="cfgEmpresaActiva">—</strong><small>Identidad utilizada en el sistema y los reportes</small></div>
+    </div>
     <div class="cfg-layout">
-      <aside class="cfg-nav">
+      <nav class="cfg-nav" aria-label="Secciones de configuración">
         <div class="cfg-nav-titulo">Configuración</div>
-        <button class="tab-btn active" data-tab="tabCfgEmpresa">${icono('<path d="M3 21h18"/><path d="M5 21V7l7-4 7 4v14"/><path d="M9 21v-6h6v6"/>')}<span>Empresa</span></button>
-        <button class="tab-btn" data-tab="tabCfgApariencia">${icono('<circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 000 18z" fill="currentColor"/>')}<span>Apariencia</span></button>
-        <button class="tab-btn" data-tab="tabCfgBaseDatos">${icono('<ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v6c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/><path d="M4 11v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/>')}<span>Base de datos</span></button>
-        <button class="tab-btn" data-tab="tabCfgAcerca">${icono('<circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><path d="M12 8h.01"/>')}<span>Acerca de</span></button>
-      </aside>
+        <button type="button" class="tab-btn active" data-tab="tabCfgEmpresa" aria-pressed="true"><span class="cfg-nav-icono">${icono('<path d="M3 21h18"/><path d="M5 21V7l7-4 7 4v14"/><path d="M9 21v-6h6v6"/>')}</span><span class="cfg-nav-texto"><strong>Empresa</strong><small>Identidad y moneda</small></span></button>
+        <button type="button" class="tab-btn" data-tab="tabCfgApariencia" aria-pressed="false"><span class="cfg-nav-icono">${icono('<circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 000 18z" fill="currentColor"/>')}</span><span class="cfg-nav-texto"><strong>Apariencia</strong><small>Tema y experiencia</small></span></button>
+        <button type="button" class="tab-btn" data-tab="tabCfgBaseDatos" aria-pressed="false"><span class="cfg-nav-icono">${icono('<ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v6c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/><path d="M4 11v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/>')}</span><span class="cfg-nav-texto"><strong>Base de datos</strong><small>Datos y respaldos</small></span></button>
+        <button type="button" class="tab-btn" data-tab="tabCfgAcerca" aria-pressed="false"><span class="cfg-nav-icono">${icono('<circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><path d="M12 8h.01"/>')}</span><span class="cfg-nav-texto"><strong>Acerca de</strong><small>Información del sistema</small></span></button>
+      </nav>
 
       <div class="cfg-main">
         <div id="tabCfgEmpresa" class="tab-content active">
           <section class="cfg-card">
-            <header class="cfg-card-cab"><div><h3>Datos de la empresa</h3><p>Aparecen junto al logotipo en la parte superior del sistema y en los reportes impresos. El nombre del sistema, <strong>SmartTransPro</strong>, no se puede modificar.</p></div></header>
+            <header class="cfg-card-cab"><span class="cfg-icono-principal" aria-hidden="true">${icono('<path d="M3 21h18"/><path d="M5 21V7l7-4 7 4v14"/><path d="M9 21v-6h6v6"/>')}</span><div><h3>Datos de la empresa</h3><p>Configura la identidad y la moneda que se utilizan en el sistema.</p></div></header>
             <div class="cfg-card-cuerpo">
               <div class="cfg-empresa">
                 <div class="cfg-logo-bloque">
+                  <strong class="cfg-logo-titulo">Vista previa del logotipo</strong>
                   <div class="empresa-logo logo-config-preview cfg-logo-grande" id="logoPreview" role="img" aria-label="Vista previa del logotipo"></div>
                   <div class="cfg-logo-botones">
-                    <label class="doc-btn" for="logoArchivo">Subir logotipo</label>
+                    <label class="doc-btn" for="logoArchivo">${icono('<path d="M12 16V4m-4 4 4-4 4 4"/><path d="M4 16v3h16v-3"/>')}Subir logotipo</label>
                     <input id="logoArchivo" type="file" accept="image/png,image/jpeg,image/svg+xml,image/webp" class="doc-input">
                     <button id="quitarLogo" class="btn btn-sm btn-secondary" type="button">Quitar</button>
                   </div>
-                  <small class="cfg-nota">PNG, JPG, SVG o WebP · máximo 400 KB. Sin imagen se muestran las iniciales.</small>
+                  <small class="cfg-nota">PNG, JPG, SVG o WebP · máximo 400 KB.<br>Sin imagen se muestran las iniciales.</small>
                 </div>
                 <div class="cfg-campos">
-                  <div class="field"><label>Nombre de la empresa</label><input id="empresa" placeholder="Ej. Transporte Fierro"></div>
+                  <div class="cfg-campos-titulo"><strong>Información general</strong><span>Datos visibles para tus usuarios</span></div>
+                  <div class="field"><label for="empresa">Nombre de la empresa</label><div class="cfg-input">${icono('<path d="M3 21h18"/><path d="M5 21V7l7-4 7 4v14"/><path d="M9 21v-6h6v6"/>')}<input id="empresa" placeholder="Ej. Transporte Fierro"></div></div>
                   <div class="cfg-fila">
-                    <div class="field"><label>Moneda</label><select id="moneda"><option value="NIO">NIO - Córdoba</option><option value="USD">USD - Dólar</option></select></div>
-                    <div class="field"><label>Símbolo</label><input id="simbolo" placeholder="Ej. C$"></div>
+                    <div class="field"><label for="moneda">Moneda</label><div class="cfg-input">${icono('<rect x="3" y="6" width="18" height="12" rx="2"/><circle cx="12" cy="12" r="2"/><path d="M6 9h.01M18 15h.01"/>')}<select id="moneda"><option value="NIO">NIO - Córdoba</option><option value="USD">USD - Dólar</option></select></div></div>
+                    <div class="field"><label for="simbolo">Símbolo</label><div class="cfg-input">${icono('<path d="M12 3v18M16 7.5c0-1.4-1.8-2.5-4-2.5S8 6.1 8 7.5s1.8 2.5 4 2.5 4 1.1 4 2.5-1.8 2.5-4 2.5-4-1.1-4-2.5"/>')}<input id="simbolo" placeholder="Ej. C$"></div></div>
                   </div>
                   <div class="cfg-vista-previa"><span>Vista previa</span><strong id="cfgPrevMonto">-</strong></div>
                 </div>
               </div>
             </div>
-            <footer class="cfg-card-pie"><button id="guardar" class="btn primary">Guardar configuración</button></footer>
+            <footer class="cfg-card-pie"><span>El nombre del sistema, SmartTransPro, no se puede modificar.</span><button id="guardar" class="btn primary" type="button">${icono('<path d="M5 3h12l3 3v15H4V3h1z"/><path d="M8 3v6h8V3M8 21v-8h8v8"/>')}Guardar configuración</button></footer>
           </section>
         </div>
 
@@ -1849,6 +1970,20 @@ async function renderConfiguracion(){
                   <span class="cfg-tema-mini cfg-tema-mini--oscuro"><i></i><i></i><i></i></span>
                   <strong>Oscuro</strong><small>Descansa la vista en ambientes tenues</small>
                 </button>
+              </div>
+            </div>
+          </section>
+          <section class="cfg-card">
+            <header class="cfg-card-cab"><div><h3>Color de fondo de la aplicación</h3><p>Cambia el fondo del área de trabajo. El título ajusta su contraste automáticamente y las tarjetas conservan sus colores. Se guarda en este equipo.</p></div></header>
+            <div class="cfg-card-cuerpo">
+              <div class="cfg-opcion cfg-color-fondo-opcion">
+                <div><strong>Fondo del área de trabajo</strong><small>Elige un color o restablece el color predeterminado del tema activo.</small></div>
+                <div class="cfg-color-fondo-control">
+                  <label for="cfgColorFondoAplicacion">Color</label>
+                  <input id="cfgColorFondoAplicacion" type="color" aria-describedby="cfgColorFondoValor">
+                  <output id="cfgColorFondoValor" aria-live="polite"></output>
+                  <button id="restablecerColorFondo" class="btn btn-sm btn-secondary" type="button">Restablecer</button>
+                </div>
               </div>
             </div>
           </section>
@@ -1872,6 +2007,19 @@ async function renderConfiguracion(){
                 </div>
               </div>
             </div>
+          </section>
+          <section class="cfg-card">
+            <header class="cfg-card-cab"><div><h3>Texto del escritorio</h3><p>Personaliza el texto centrado en el Escritorio. Se guarda en este equipo; si lo dejas vacío, se usará “Transporte Fierro”.</p></div></header>
+            <div class="cfg-card-cuerpo">
+              <div class="cfg-campos">
+                <div class="field">
+                  <label for="cfgTextoEscritorio">Texto que se mostrará</label>
+                  <input id="cfgTextoEscritorio" type="text" maxlength="80" placeholder="Transporte Fierro">
+                </div>
+                <div class="cfg-vista-previa"><span>Vista previa</span><strong id="cfgVistaTextoEscritorio"></strong></div>
+              </div>
+            </div>
+            <footer class="cfg-card-pie"><button id="guardarTextoEscritorio" class="btn primary" type="button">Guardar texto</button></footer>
           </section>
         </div>
 
@@ -1902,9 +2050,10 @@ async function renderConfiguracion(){
   const tabBtnsCfg=content.querySelectorAll('.tab-btn');
   const tabContentsCfg=content.querySelectorAll('.tab-content');
   tabBtnsCfg.forEach(btn=>btn.addEventListener('click',()=>{
-    tabBtnsCfg.forEach(b=>b.classList.remove('active'));
+    tabBtnsCfg.forEach(b=>{ b.classList.remove('active'); b.setAttribute('aria-pressed','false'); });
     tabContentsCfg.forEach(c=>c.classList.remove('active'));
     btn.classList.add('active');
+    btn.setAttribute('aria-pressed','true');
     document.getElementById(btn.dataset.tab).classList.add('active');
   }));
 
@@ -1933,10 +2082,48 @@ async function renderConfiguracion(){
   });
   marcarPreferencias();
 
+  const campoColorFondo=document.getElementById('cfgColorFondoAplicacion');
+  const valorColorFondo=document.getElementById('cfgColorFondoValor');
+  const actualizarColorFondo=()=>{
+    const color=campoColorFondo.value.toUpperCase();
+    valorColorFondo.textContent=color;
+    localStorage.setItem(CLAVE_COLOR_FONDO_APLICACION,color);
+    aplicarColorFondoAplicacion();
+  };
+  const colorGuardado=localStorage.getItem(CLAVE_COLOR_FONDO_APLICACION);
+  campoColorFondo.value=colorHexValido(colorGuardado)
+    ? colorGuardado
+    : document.body.classList.contains('dark-theme')?'#18232d':'#edf2f6';
+  valorColorFondo.textContent=campoColorFondo.value.toUpperCase();
+  campoColorFondo.addEventListener('input',actualizarColorFondo);
+  document.getElementById('restablecerColorFondo').onclick=()=>{
+    localStorage.removeItem(CLAVE_COLOR_FONDO_APLICACION);
+    aplicarColorFondoAplicacion();
+    campoColorFondo.value=document.body.classList.contains('dark-theme')?'#18232d':'#edf2f6';
+    valorColorFondo.textContent=campoColorFondo.value.toUpperCase();
+  };
+
+  const campoTextoEscritorio=document.getElementById('cfgTextoEscritorio');
+  const vistaTextoEscritorio=document.getElementById('cfgVistaTextoEscritorio');
+  campoTextoEscritorio.value=localStorage.getItem(CLAVE_TEXTO_ESCRITORIO)||TEXTO_ESCRITORIO_DEFAULT;
+  const actualizarVistaTextoEscritorio=()=>{
+    vistaTextoEscritorio.textContent=campoTextoEscritorio.value.trim()||TEXTO_ESCRITORIO_DEFAULT;
+  };
+  campoTextoEscritorio.addEventListener('input',actualizarVistaTextoEscritorio);
+  actualizarVistaTextoEscritorio();
+  document.getElementById('guardarTextoEscritorio').onclick=async()=>{
+    const texto=campoTextoEscritorio.value.trim()||TEXTO_ESCRITORIO_DEFAULT;
+    localStorage.setItem(CLAVE_TEXTO_ESCRITORIO,texto);
+    campoTextoEscritorio.value=texto;
+    actualizarVistaTextoEscritorio();
+    await avisarExito('Texto guardado','El nuevo texto aparecerá en el Escritorio.');
+  };
+
   document.getElementById('empresa').value=d.nombre_empresa||'';
   document.getElementById('moneda').value=d.moneda||'NIO';
   document.getElementById('simbolo').value=d.simbolo||'C$';
   document.getElementById('acercaEmpresa').textContent=d.nombre_empresa||'Transporte Fierro';
+  document.getElementById('cfgEmpresaActiva').textContent=d.nombre_empresa||'Transporte Fierro';
   const refrescarMonto=()=>{
     const sim=document.getElementById('simbolo').value.trim()||'C$';
     document.getElementById('cfgPrevMonto').textContent=`${sim} 12,345.67`;
@@ -1985,6 +2172,7 @@ async function renderConfiguracion(){
     });
     await aplicarConfiguracionEmpresa();
     document.getElementById('acercaEmpresa').textContent=nombreNuevo;
+    document.getElementById('cfgEmpresaActiva').textContent=nombreNuevo;
     await avisarExito('Configuración guardada','Los datos de la empresa quedaron actualizados.');
   };
   await montarPanelBaseDatos();

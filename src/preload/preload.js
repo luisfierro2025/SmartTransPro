@@ -6,7 +6,7 @@ contextBridge.exposeInMainWorld('api',{
     tablero:f=>ipcRenderer.invoke('dashboard:tablero',f)
   },
   configuracion:{obtener:()=>ipcRenderer.invoke('configuracion:obtener'),guardar:d=>ipcRenderer.invoke('configuracion:guardar',d)},
-  reportes:{egresos:f=>ipcRenderer.invoke('reportes:egresos',f),combustible:f=>ipcRenderer.invoke('reportes:combustible',f),pdf:(html,nombreSugerido)=>ipcRenderer.invoke('reportes:pdf',{html,nombreSugerido})},
+  reportes:{egresos:f=>ipcRenderer.invoke('reportes:egresos',f),combustible:f=>ipcRenderer.invoke('reportes:combustible',f),pdf:(html,nombreSugerido)=>ipcRenderer.invoke('reportes:pdf',{html,nombreSugerido}),imprimirHtml:(html,opciones={})=>ipcRenderer.invoke('reportes:imprimir-html',{html,...opciones})},
   bitacora:{
     listar:f=>ipcRenderer.invoke('bitacora:listar',f),
     obtener:id=>ipcRenderer.invoke('bitacora:obtener',id),
@@ -73,7 +73,8 @@ contextBridge.exposeInMainWorld('api',{
     generar:d=>ipcRenderer.invoke('planilla:generar',d),
     pagar:id=>ipcRenderer.invoke('planilla:pagar',id),
     eliminar:id=>ipcRenderer.invoke('planilla:eliminar',id),
-    sugerencia:()=>ipcRenderer.invoke('planilla:sugerencia')
+    sugerencia:()=>ipcRenderer.invoke('planilla:sugerencia'),
+    movimientosPendientes:f=>ipcRenderer.invoke('planilla:movimientos_pendientes',f)
   },
   comisiones:{
     listar:f=>ipcRenderer.invoke('comisiones:listar',f),
@@ -83,6 +84,12 @@ contextBridge.exposeInMainWorld('api',{
     pagarConductor:d=>ipcRenderer.invoke('comisiones:pagar_conductor',d),
     eliminar:id=>ipcRenderer.invoke('comisiones:eliminar',id),
     generar:d=>ipcRenderer.invoke('comisiones:generar',d)
+  },
+  tarifasDestino:{
+    listar:f=>ipcRenderer.invoke('tarifas_destino:listar',f),
+    buscar:f=>ipcRenderer.invoke('tarifas_destino:buscar',f),
+    guardar:d=>ipcRenderer.invoke('tarifas_destino:guardar',d),
+    eliminar:id=>ipcRenderer.invoke('tarifas_destino:eliminar',id)
   },
   archivos:{
     guardarImagen:(dataUrl,nombreSugerido)=>ipcRenderer.invoke('archivos:guardar_imagen',{dataUrl,nombreSugerido}),

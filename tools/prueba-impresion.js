@@ -1,8 +1,8 @@
 // ============================================================================
-// Prueba de impresión y descarga de documentos SIN Electron.
+// Prueba los recorridos de impresión web y Electron y las descargas de documentos.
 //
 // Los botones "Imprimir" y "Descargar" de la ficha del conductor llegan a la
-// API de escritorio (window.api.reportes.pdf / window.api.archivos.*), que en
+// API de escritorio (window.api.reportes.imprimirHtml / window.api.archivos.*), que en
 // la versión web no existe: ahí el trabajo lo hace el navegador. Esta prueba
 // carga las funciones reales de src/renderer/js/utilidades.js sobre un DOM
 // simulado y comprueba que eligen el camino correcto y no lanzan.
@@ -61,6 +61,7 @@ function crearNavegador() {
       },
       querySelectorAll: () => []
     };
+    if (etiqueta === 'template') nodo.content = { querySelectorAll: () => [] };
     return nodo;
   };
 
@@ -128,7 +129,7 @@ function verificar(descripcion, condicion, detalle) {
 }
 
 async function ejecutar() {
-  console.log('\n=== Prueba de impresión y descarga (modo navegador) ===\n');
+  console.log('\n=== Prueba de impresión web y Electron ===\n');
   let ok = true;
 
   // ---------------------------------------------------------------- 1) entorno
@@ -142,11 +143,12 @@ async function ejecutar() {
     ok = verificar('sin API de escritorio no intenta generar el PDF nativo', nube.puedeGenerarPdfNativo() === false) && ok;
     ok = verificar('sin API de escritorio no intenta guardar en disco', nube.puedeGuardarEnDisco() === false) && ok;
 
-    // Y así en Electron: el preload sí expone las dos funciones.
+    // Y así en Electron: el preload expone las funciones nativas.
     const { contexto: escritorio } = crearNavegador();
     cargarUtilidades(escritorio);
-    escritorio.window.api = { reportes: { pdf: () => {} }, archivos: { guardarImagen: () => {}, guardarImagenes: () => {} } };
+    escritorio.window.api = { reportes: { pdf: () => {}, imprimirHtml: () => {} }, archivos: { guardarImagen: () => {}, guardarImagenes: () => {} } };
     ok = verificar('con preload de Electron detecta el PDF nativo', escritorio.puedeGenerarPdfNativo() === true) && ok;
+    ok = verificar('con preload de Electron detecta la impresión nativa', escritorio.puedeImprimirEnElectron() === true) && ok;
     ok = verificar('con preload de Electron detecta la descarga a disco', escritorio.puedeGuardarEnDisco() === true) && ok;
   }
 
@@ -157,6 +159,9 @@ async function ejecutar() {
     cargarUtilidades(contexto);
     const html = contexto.documentoProfesionalHtml({ titulo: 'Licencia', cuerpoHtml: '<p>x</p>' });
     ok = verificar('genera un documento HTML completo', /<!doctype html>/i.test(html) && html.includes('Licencia')) && ok;
+    ok = verificar('usa tipografía profesional local y cifras tabulares',
+      /font-family:"Aptos","Segoe UI","Helvetica Neue",Arial,sans-serif/.test(html) &&
+      /font-variant-numeric:tabular-nums/.test(html)) && ok;
 
     const abierto = contexto.imprimirHtmlEnVentana(html, 'Licencia');
     ok = verificar('abre la ventana de impresión en vez de fallar', abierto === true && registro.alertas.length === 0) && ok;
@@ -166,9 +171,9 @@ async function ejecutar() {
 
     // El recorrido completo desde el botón, como lo hace la ficha del conductor.
     const antes = registro.impresas;
-    await contexto.imprimirComoPdf({ titulo: 'Documento de Conductor', cuerpoHtml: '<p>x</p>', nombreArchivo: 'c' });
+    await contexto.imprimirConPlantillaProfesional({ titulo: 'Documento de Conductor', cuerpoHtml: '<p>x</p>', nombreArchivo: 'c' });
     await new Promise(r => setTimeout(r, 250));
-    ok = verificar('imprimirComoPdf() no lanza y sí imprime',
+    ok = verificar('la plantilla de impresión no lanza y sí imprime',
       registro.impresas === antes + 1 && registro.alertas.length === 0,
       `alertas=${JSON.stringify(registro.alertas)}`) && ok;
 
@@ -219,10 +224,19 @@ async function ejecutar() {
     cargarUtilidades(contexto);
     let recibido = null;
     contexto.window.api = {
-      reportes: { pdf: (html, nombre) => { recibido = { html, nombre }; return { ok: true }; } }
+      reportes: {
+        pdf: () => ({ ok: true }),
+        imprimirHtml: (html, opciones) => { recibido = { html, opciones }; return Promise.resolve({ ok: true }); }
+      }
     };
-    await contexto.imprimirComoPdf({ titulo: 'Licencia', cuerpoHtml: '<p>x</p>', nombreArchivo: 'juan-frontal' });
-    ok = verificar('delega en reportes:pdf de Electron', recibido && recibido.nombre === 'juan-frontal') && ok;
+    await contexto.imprimirConPlantillaProfesional({
+      titulo: 'Licencia',
+      cuerpoHtml: '<p>x</p>',
+      nombreArchivo: 'juan-frontal',
+      tamanoPagina: 'letter landscape'
+    });
+    ok = verificar('delega la impresión en el diálogo nativo de Electron',
+      recibido && recibido.html.includes('Licencia') && recibido.opciones.landscape === true) && ok;
     ok = verificar('no abre la ventana del navegador en escritorio', registro.impresas === 0) && ok;
   }
 

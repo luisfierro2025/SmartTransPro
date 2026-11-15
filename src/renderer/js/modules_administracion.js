@@ -90,10 +90,6 @@ async function renderMovimientoFinanciero(cfg) {
         <h2>${cfg.titulo}</h2>
         <p>${cfg.descripcion}</p>
       </div>
-      <div class="page-actions">
-        <button id="btnAgregarFilaMov" class="btn" type="button">+ Agregar en tabla</button>
-        <button id="btnNuevoMovimiento" class="btn primary">+ Registrar ${cfg.etiqueta}</button>
-      </div>
     </div>
 
     <div class="metrics-grid" style="margin-bottom:18px;">
@@ -104,14 +100,20 @@ async function renderMovimientoFinanciero(cfg) {
     </div>
 
     <div class="panel">
-      <div class="toolbar">
-        <div class="field"><label>Desde</label><input id="finDesde" type="date" value="${fechaHaceDias(30)}"></div>
-        <div class="field"><label>Hasta</label><input id="finHasta" type="date" value="${fechaHoy()}"></div>
-        <div class="field"><label>Categoría</label><select id="finFiltroCategoria"><option value="">Todas las categorías</option></select></div>
-        <div class="field"><label>Buscar</label><input id="finBuscar" type="text" placeholder="Concepto, referencia, ${cfg.etiquetaTercero.toLowerCase()}..."></div>
-        <button id="btnFiltrarFin" class="btn primary">Buscar</button>
-        <button id="btnLimpiarFin" class="btn">Limpiar</button>
-        <button id="btnImprimirFin" class="btn btn-imprimir-auto" type="button">🖨️ Imprimir PDF</button>
+      <div class="toolbar movimientos-toolbar">
+        <div class="movimientos-filtros">
+          <div class="field"><label>Desde</label><input id="finDesde" type="date" value="${fechaHaceDias(30)}"></div>
+          <div class="field"><label>Hasta</label><input id="finHasta" type="date" value="${fechaHoy()}"></div>
+          <div class="field"><label>Categoría</label><select id="finFiltroCategoria"><option value="">Todas las categorías</option></select></div>
+          <div class="field"><label>Buscar</label><input id="finBuscar" type="text" placeholder="Concepto, referencia, ${cfg.etiquetaTercero.toLowerCase()}..."></div>
+          <button id="btnFiltrarFin" class="btn primary" type="button">Buscar</button>
+          <button id="btnLimpiarFin" class="btn" type="button">Limpiar</button>
+          <button id="btnImprimirFin" class="btn btn-imprimir-auto" type="button">🖨️ Imprimir PDF</button>
+        </div>
+        <div class="movimientos-toolbar-actions">
+          <button id="btnAgregarFilaMov" class="btn" type="button">+ Agregar en tabla</button>
+          <button id="btnNuevoMovimiento" class="btn primary" type="button">+ Registrar ${cfg.etiqueta}</button>
+        </div>
       </div>
       <div id="tablaFinanciera" class="table-wrap">${vacio('Cargando registros...')}</div>
     </div>
@@ -404,7 +406,7 @@ async function renderMovimientoFinanciero(cfg) {
           <tr><td colspan="5">TOTAL</td><td style="text-align:right">${formatoMonto(total)}</td></tr>
         </tfoot>
       </table>`;
-    await imprimirComoPdf({
+    await imprimirConPlantillaProfesional({
       titulo: cfg.titulo,
       subtitulo: periodo,
       filtrosTexto: partesFiltro.join(' &nbsp;·&nbsp; '),
@@ -443,18 +445,20 @@ async function renderPlanilla() {
         <h2>Planilla, Viáticos y Comisiones</h2>
         <p>Empleados y salarios base, planillas por período, viáticos por conductor y comisiones por viaje.</p>
       </div>
-      <div class="page-actions">
-        <button id="btnNuevoEmpleado" class="btn primary">+ Registrar Empleado</button>
-        <button id="btnGenerarPlanilla" class="btn btn-warning">Generar Planilla</button>
-        <button id="btnImprimirPlanilla" class="btn btn-secondary">🖨️ Imprimir</button>
-      </div>
     </div>
 
-    <div class="nav-tabs">
-      <button class="tab-btn active" data-tab="tabPlanillas">Planillas</button>
-      <button class="tab-btn" data-tab="tabEmpleados">Empleados</button>
-      <button class="tab-btn" data-tab="tabViaticos">Viáticos</button>
-      <button class="tab-btn" data-tab="tabComisiones">Comisiones</button>
+    <div class="planilla-navigation">
+      <div class="nav-tabs planilla-tabs" role="tablist" aria-label="Secciones de planilla">
+        <button class="tab-btn active" data-tab="tabPlanillas" role="tab" aria-selected="true" aria-controls="tabPlanillas"><span class="tab-icon" aria-hidden="true">📋</span>Planillas</button>
+        <button class="tab-btn" data-tab="tabEmpleados" role="tab" aria-selected="false" aria-controls="tabEmpleados"><span class="tab-icon" aria-hidden="true">👥</span>Empleados</button>
+        <button class="tab-btn" data-tab="tabViaticos" role="tab" aria-selected="false" aria-controls="tabViaticos"><span class="tab-icon" aria-hidden="true">🧾</span>Viáticos</button>
+        <button class="tab-btn" data-tab="tabComisiones" role="tab" aria-selected="false" aria-controls="tabComisiones"><span class="tab-icon" aria-hidden="true">💰</span>Comisiones</button>
+      </div>
+      <div class="planilla-tab-actions">
+        <button id="btnNuevoEmpleado" class="btn primary" type="button">+ Registrar Empleado</button>
+        <button id="btnGenerarPlanilla" class="btn btn-warning" type="button">Generar Planilla</button>
+        <button id="btnImprimirPlanilla" class="btn btn-secondary" type="button">🖨️ Imprimir</button>
+      </div>
     </div>
 
     <div id="tabPlanillas" class="tab-content active">
@@ -615,10 +619,20 @@ async function renderPlanilla() {
   const tabContents = content.querySelectorAll('.tab-content');
   tabBtns.forEach(b => {
     b.addEventListener('click', () => {
-      tabBtns.forEach(x => x.classList.remove('active'));
+      tabBtns.forEach(x => { x.classList.remove('active'); x.setAttribute('aria-selected', 'false'); });
       tabContents.forEach(x => x.classList.remove('active'));
       b.classList.add('active');
+      b.setAttribute('aria-selected', 'true');
       document.getElementById(b.dataset.tab).classList.add('active');
+    });
+    // Cambiar de pestaña con ← → cuando el foco está sobre la barra.
+    b.addEventListener('keydown', e => {
+      if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+      e.preventDefault();
+      const lista = Array.from(tabBtns);
+      const i = (lista.indexOf(b) + (e.key === 'ArrowRight' ? 1 : lista.length - 1)) % lista.length;
+      lista[i].focus();
+      lista[i].click();
     });
   });
 
