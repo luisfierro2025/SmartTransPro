@@ -264,6 +264,53 @@ const modulos={
   configuracion:['Configuración',renderConfiguracion]
 };
 
+// Encabezados de módulo con el mismo lenguaje visual que Configuración.
+const ICONOS_MODULO={
+  escritorio:'<path d="m3 10 9-7 9 7M5 9v11h14V9M9 20v-6h6v6"/>',
+  dashboard:'<rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/>',
+  bitacora:'<path d="M8 3h8a1 1 0 0 1 1 1v16a1 1 0 0 1-1 1H8a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1Z"/><path d="M9 3v3h6V3M9 11h6M9 15h6M9 19h3"/>',
+  flota:'<path d="M3 16V7a1 1 0 0 1 1-1h9v10M13 10h4l3 3v3h-2"/><circle cx="7.5" cy="17.5" r="1.7"/><circle cx="16.5" cy="17.5" r="1.7"/>',
+  clientes:'<circle cx="9" cy="8" r="3.2"/><path d="M2.5 20c.7-3.4 3.3-5.5 6.5-5.5s5.8 2.1 6.5 5.5M16 14.8c2.6.3 4.6 2.2 5.2 5.2"/><circle cx="17.5" cy="8.5" r="2.6"/>',
+  planilla:'<rect x="2.5" y="5" width="19" height="14" rx="2"/><path d="M2.5 10h19M6 14.5h5M6 17h3"/>',
+  ingresos:'<path d="M4 15l6-6 4 4 6-7M15 6h5v5"/>',
+  egresos:'<path d="M4 9l6 6 4-4 6 7M15 18h5v-5"/>',
+  reportes:'<path d="M4 20V10M11 20V4M18 20v-7M2 20h20"/>',
+  usuarios:'<circle cx="12" cy="8" r="3.4"/><path d="M4.5 20c.9-3.6 3.9-5.6 7.5-5.6s6.6 2 7.5 5.6M18.5 5.6a3 3 0 0 1 0 5.4"/>'
+};
+
+function decorarEncabezadoModulo(nombre){
+  const trazo=ICONOS_MODULO[nombre];
+  if(!trazo) return;
+  const icono=document.createElement('span');
+  icono.className='module-heading-icon';
+  icono.setAttribute('aria-hidden','true');
+  icono.innerHTML=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${trazo}</svg>`;
+
+  if(nombre==='dashboard'){
+    const bloque=content.querySelector('.dash-hero-txt');
+    if(!bloque||bloque.querySelector('.module-heading-icon')) return;
+    bloque.classList.add('module-heading-dashboard');
+    bloque.prepend(icono);
+    return;
+  }
+
+  const encabezado=content.querySelector('.page-intro:not(.cfg-encabezado)');
+  if(!encabezado||encabezado.querySelector('.module-heading-icon')) return;
+  const titulo=encabezado.querySelector(':scope > h2, :scope > div > h2');
+  if(!titulo) return;
+  const bloque=titulo.parentElement;
+  if(bloque===encabezado){
+    encabezado.classList.add('module-heading-flat');
+    icono.classList.add('module-heading-icon--flat');
+    encabezado.insertBefore(icono,titulo);
+    return;
+  }
+  const grupo=document.createElement('div');
+  grupo.className='module-heading-group';
+  encabezado.insertBefore(grupo,bloque);
+  grupo.append(icono,bloque);
+}
+
 document.querySelectorAll('.menu-item').forEach(b=>b.addEventListener('click',()=>{
   document.querySelectorAll('.menu-item').forEach(x=>x.classList.remove('active'));
   b.classList.add('active');
@@ -286,6 +333,7 @@ async function abrir(n){
   // El menú, el encabezado y la barra de estado permanecen fijos.
   if(content) content.scrollTop=0;
   await m[1]();
+  decorarEncabezadoModulo(n);
   // Activa búsqueda inteligente (filtra mientras se escribe) e impresión
   // de lo filtrado en todas las barras de herramientas del módulo recién dibujado.
   activarBusquedaInteligenteYImpresion(content);
@@ -293,9 +341,15 @@ async function abrir(n){
 
 function renderEscritorio(){
   content.innerHTML=`
-    <div class="escritorio-vacio" role="region" aria-label="Escritorio de SmartTransPro">
-      <div class="escritorio-marca" aria-hidden="true">
-        <span id="textoMarcaEscritorio"></span>
+    <div class="escritorio-inicio">
+      <div class="page-intro module-heading-flat">
+        <h2>Escritorio</h2>
+        <p>Centro de trabajo de SmartTransPro.</p>
+      </div>
+      <div class="escritorio-vacio" role="region" aria-label="Escritorio de SmartTransPro">
+        <div class="escritorio-marca" aria-hidden="true">
+          <span id="textoMarcaEscritorio"></span>
+        </div>
       </div>
     </div>`;
   content.querySelector('#textoMarcaEscritorio').textContent=
